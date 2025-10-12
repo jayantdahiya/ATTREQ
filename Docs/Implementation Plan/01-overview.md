@@ -24,7 +24,7 @@
 
 ### Simplified MVP Scope
 Based on your preferences, we've simplified:
-1. **ATTREQ DNA Profiling**: Manual preference form instead of ML clustering
+1. **ATTREQ DNA Profiling**: **DEFERRED TO V2** - Style preference onboarding moved to future version
 2. **Calendar Integration**: Manual event dropdown instead of full OAuth sync
 3. **Analytics/Monitoring**: Deferred to post-MVP
 4. **Marketing/Beta**: Focus on technical implementation first

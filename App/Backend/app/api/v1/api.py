@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, outfits, users, wardrobe
+from app.api.v1.endpoints import auth, outfits, recommendations, users, wardrobe
 
 api_router = APIRouter()
 
@@ -17,3 +17,6 @@ api_router.include_router(wardrobe.router, prefix="/wardrobe", tags=["wardrobe"]
 
 # Include outfit management routes
 api_router.include_router(outfits.router, prefix="/outfits", tags=["outfits"])
+
+# Include recommendation routes
+api_router.include_router(recommendations.router, prefix="/recommendations", tags=["recommendations"])

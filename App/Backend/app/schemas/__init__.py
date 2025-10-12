@@ -8,6 +8,12 @@ from app.schemas.outfit import (
     OutfitWear,
     OutfitWithItems,
 )
+from app.schemas.recommendation import (
+    DailySuggestionRequest,
+    DailySuggestionsResponse,
+    OutfitSuggestion,
+    WeatherData,
+)
 from app.schemas.token import Token, TokenPayload
 from app.schemas.user import PasswordChange, UserCreate, UserProfile, UserResponse, UserUpdate
 from app.schemas.wardrobe import (
@@ -37,4 +43,8 @@ __all__ = [
     "OutfitFeedback",
     "OutfitWear",
     "OutfitList",
+    "WeatherData",
+    "OutfitSuggestion",
+    "DailySuggestionRequest",
+    "DailySuggestionsResponse",
 ]

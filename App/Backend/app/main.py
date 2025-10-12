@@ -1,15 +1,18 @@
 """Main FastAPI application for ATTREQ backend."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.services.ai.embeddings import weaviate_service
+from app.services.cache.redis_client import redis_cache
 
 
 @asynccontextmanager
@@ -22,11 +25,17 @@ async def lifespan(app: FastAPI):
     if weaviate_service.is_connected():
         weaviate_service.init_schema()
 
+    # Check Redis connection
+    if await redis_cache.is_connected():
+
+        logging.getLogger(__name__).info("Redis cache connected successfully")
+
     yield
 
     # Shutdown
     await close_db()
     weaviate_service.close()
+    await redis_cache.close()
 
 
 # Create FastAPI application
@@ -52,6 +61,9 @@ app.add_middleware(
 # Add trusted host middleware for security
 if settings.app_env == "production":
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["attreq.com", "*.attreq.com"])
+
+# Mount static files directory for uploads
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")
