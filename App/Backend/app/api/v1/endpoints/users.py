@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import oauth2_scheme
 from app.crud.user import user_crud
-from app.schemas.user import PasswordChange, UserResponse, UserUpdate
+from app.schemas.user import LocationUpdate, PasswordChange, UserResponse, UserUpdate
 
 router = APIRouter()
 
@@ -120,6 +120,27 @@ async def change_password(
     await db.commit()
 
     return {"message": "Password updated successfully"}
+
+
+@router.patch("/me/location", response_model=UserResponse)
+async def update_user_location(
+    location_data: LocationUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Update user's saved location.
+
+    Args:
+        location_data: Location update data (lat, lon, city)
+        db: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        UserResponse: Updated user information
+    """
+    updated_user = await user_crud.update_user_location(db, current_user, location_data)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.delete("/me", status_code=status.HTTP_200_OK)

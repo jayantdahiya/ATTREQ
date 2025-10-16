@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import LocationUpdate, UserCreate, UserUpdate
 
 
 class UserCRUD:
@@ -143,6 +143,32 @@ class UserCRUD:
             User: Updated user object
         """
         await db.execute(update(User).where(User.id == user.id).values(is_verified=True))
+        await db.commit()
+        await db.refresh(user)
+
+        return user
+
+    async def update_user_location(self, db: AsyncSession, user: User, location_data: LocationUpdate) -> User:
+        """
+        Update user's saved location.
+
+        Args:
+            db: Database session
+            user: User object
+            location_data: Location update data
+
+        Returns:
+            User: Updated user object
+        """
+        update_values = {
+            "saved_latitude": location_data.lat,
+            "saved_longitude": location_data.lon,
+        }
+        
+        if location_data.city:
+            update_values["saved_city"] = location_data.city
+
+        await db.execute(update(User).where(User.id == user.id).values(**update_values))
         await db.commit()
         await db.refresh(user)
 

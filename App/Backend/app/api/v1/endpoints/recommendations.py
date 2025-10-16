@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 @router.get("/daily", response_model=DailySuggestionsResponse)
 async def get_daily_suggestions(
-    lat: float = Query(..., description="Latitude for weather lookup", ge=-90, le=90),
-    lon: float = Query(..., description="Longitude for weather lookup", ge=-180, le=180),
+    lat: float | None = Query(None, description="Latitude for weather lookup", ge=-90, le=90),
+    lon: float | None = Query(None, description="Longitude for weather lookup", ge=-180, le=180),
     occasion: str = Query("casual", description="Occasion type (casual, formal, party, etc.)"),
     force_refresh: bool = Query(False, description="Force regeneration, bypass cache"),
     db: AsyncSession = Depends(get_db),
@@ -33,14 +33,15 @@ async def get_daily_suggestions(
     1. Check Redis cache for today's suggestions (unless force_refresh=True)
     2. If cached, return cached suggestions
     3. If not cached:
-       a. Fetch weather from OpenWeatherMap (with Redis cache)
-       b. Generate outfits using recommendation algorithm
-       c. Store suggestions in Redis (24h TTL)
-       d. Return suggestions
+       a. Determine location (provided coords or user's saved location)
+       b. Fetch weather from OpenWeatherMap (with Redis cache)
+       c. Generate outfits using recommendation algorithm
+       d. Store suggestions in Redis (24h TTL)
+       e. Return suggestions
 
     Args:
-        lat: Latitude for weather lookup
-        lon: Longitude for weather lookup
+        lat: Latitude for weather lookup (optional, uses saved location if not provided)
+        lon: Longitude for weather lookup (optional, uses saved location if not provided)
         occasion: Occasion type (default: "casual")
         force_refresh: Force regeneration, bypass cache (default: False)
         db: Database session
@@ -50,7 +51,7 @@ async def get_daily_suggestions(
         Daily outfit suggestions with weather context
 
     Raises:
-        HTTPException: If user has insufficient wardrobe items
+        HTTPException: If user has insufficient wardrobe items or no location available
     """
     today = date.today().isoformat()
     cache_key = f"daily_suggestions:{current_user.id}:{today}:{occasion}"
@@ -64,9 +65,24 @@ async def get_daily_suggestions(
             cached_suggestions["cached"] = True
             return DailySuggestionsResponse(**cached_suggestions)
 
-    # Step 2: Fetch weather data (with its own cache)
+    # Step 2: Determine location coordinates
+    weather_lat = lat
+    weather_lon = lon
+    
+    # If no coordinates provided, use user's saved location
+    if weather_lat is None or weather_lon is None:
+        if current_user.saved_latitude is None or current_user.saved_longitude is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No location available. Please provide coordinates or set your location in profile."
+            )
+        weather_lat = current_user.saved_latitude
+        weather_lon = current_user.saved_longitude
+        logger.info(f"Using saved location for user {current_user.id}: {weather_lat}, {weather_lon}")
+
+    # Step 3: Fetch weather data (with its own cache)
     try:
-        weather_data = await weather_service.get_current_weather(lat, lon)
+        weather_data = await weather_service.get_current_weather(weather_lat, weather_lon)
     except Exception as e:
         logger.error(f"Failed to fetch weather: {str(e)}")
         raise HTTPException(
@@ -74,7 +90,7 @@ async def get_daily_suggestions(
             detail="Weather service temporarily unavailable"
         )
 
-    # Step 3: Generate outfit suggestions
+    # Step 4: Generate outfit suggestions
     try:
         suggestions = await generate_daily_outfits(
             db=db,
@@ -97,7 +113,7 @@ async def get_daily_suggestions(
             detail="Insufficient wardrobe items to generate outfit suggestions. Please add more items to your wardrobe."
         )
 
-    # Step 4: Build response
+    # Step 5: Build response
     response_data = {
         "suggestions": suggestions,
         "total_suggestions": len(suggestions),
@@ -107,7 +123,7 @@ async def get_daily_suggestions(
         "cached": False,
     }
 
-    # Step 5: Cache the response (24 hours TTL)
+    # Step 6: Cache the response (24 hours TTL)
     cache_ttl = 24 * 60 * 60  # 24 hours in seconds
     await redis_cache.set(cache_key, response_data, ttl=cache_ttl)
 

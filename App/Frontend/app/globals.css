@@ -120,3 +120,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Fix Sonner toast text visibility */
+[data-sonner-toast] * {
+  color: var(--popover-foreground) !important;
+}

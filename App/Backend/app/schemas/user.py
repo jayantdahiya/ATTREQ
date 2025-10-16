@@ -12,6 +12,9 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: str | None = Field(None, max_length=255)
     location: str | None = Field(None, max_length=255)
+    saved_latitude: float | None = Field(None, ge=-90, le=90)
+    saved_longitude: float | None = Field(None, ge=-180, le=180)
+    saved_city: str | None = Field(None, max_length=255)
 
 
 class UserCreate(UserBase):
@@ -38,6 +41,9 @@ class UserUpdate(BaseModel):
 
     full_name: str | None = Field(None, max_length=255)
     location: str | None = Field(None, max_length=255)
+    saved_latitude: float | None = Field(None, ge=-90, le=90)
+    saved_longitude: float | None = Field(None, ge=-180, le=180)
+    saved_city: str | None = Field(None, max_length=255)
     is_active: bool | None = None
 
 
@@ -86,6 +92,14 @@ class UserProfile(UserBase):
 
     class Config:
         from_attributes = True
+
+
+class LocationUpdate(BaseModel):
+    """Schema for updating user location."""
+
+    lat: float = Field(..., ge=-90, le=90, description="Latitude")
+    lon: float = Field(..., ge=-180, le=180, description="Longitude")
+    city: str | None = Field(None, max_length=255, description="City name")
 
 
 class PasswordChange(BaseModel):

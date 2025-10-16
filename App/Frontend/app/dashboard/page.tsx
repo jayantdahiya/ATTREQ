@@ -10,30 +10,70 @@ import { toast } from 'sonner'
 import { recommendationsApi, OutfitSuggestion, WeatherData } from '@/lib/api/recommendations'
 import { useAuthStore } from '@/store/auth'
 import { getFullImageUrl } from '@/lib/utils'
-import { Heart, RefreshCw, MapPin, Thermometer, Wind, Droplets } from 'lucide-react'
+import { useUserLocation } from '@/lib/hooks/useUserLocation'
+import { LocationPermissionDialog } from '@/components/location-permission-dialog'
+import { getLocationFromStorage } from '@/lib/utils/location'
+import { Heart, RefreshCw, MapPin, Thermometer, Wind, Droplets, Sun, Cloud, CloudRain, CloudSnow, CloudLightning } from 'lucide-react'
 
 
 export default function DashboardPage() {
   const { user } = useAuthStore()
+  const { location, isLoading: locationLoading, requestLocation, setLocationManually, showManualDialog } = useUserLocation()
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([])
   const [weather, setWeather] = useState<WeatherData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
 
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours()
+    if (hour < 12) {
+      return 'Good morning'
+    } else if (hour < 17) {
+      return 'Good afternoon'
+    } else {
+      return 'Good evening'
+    }
+  }
+
+  const getWeatherIcon = (condition: string) => {
+    const conditionLower = condition.toLowerCase()
+    
+    if (conditionLower.includes('sun') || conditionLower.includes('clear')) {
+      return <Sun className="h-5 w-5 text-yellow-500" />
+    } else if (conditionLower.includes('rain') || conditionLower.includes('drizzle')) {
+      return <CloudRain className="h-5 w-5 text-blue-500" />
+    } else if (conditionLower.includes('snow') || conditionLower.includes('blizzard')) {
+      return <CloudSnow className="h-5 w-5 text-blue-300" />
+    } else if (conditionLower.includes('storm') || conditionLower.includes('thunder') || conditionLower.includes('lightning')) {
+      return <CloudLightning className="h-5 w-5 text-purple-500" />
+    } else if (conditionLower.includes('cloud') || conditionLower.includes('overcast')) {
+      return <Cloud className="h-5 w-5 text-gray-500" />
+    } else {
+      return <Sun className="h-5 w-5 text-yellow-500" />
+    }
+  }
+
   useEffect(() => {
-    fetchSuggestions()
-  }, [])
+    // If we have a location (from any source), fetch suggestions
+    if (location) {
+      fetchSuggestions()
+    }
+  }, [location])
 
   const fetchSuggestions = async () => {
     setIsLoading(true)
     try {
-      // For demo purposes, using default coordinates (New York)
-      // In production, this would use the user's location
-      const response = await recommendationsApi.getDailySuggestions({
-        lat: 40.7128,
-        lon: -74.0060,
+      // Use user's location if available, otherwise let backend use saved location
+      const params: any = {
         occasion: 'casual',
-      })
+      }
+      
+      if (location) {
+        params.lat = location.lat
+        params.lon = location.lon
+      }
+      
+      const response = await recommendationsApi.getDailySuggestions(params)
       
       console.log('API Response:', response)
       console.log('Suggestions:', response.suggestions)
@@ -82,7 +122,7 @@ export default function DashboardPage() {
     setCurrentIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length)
   }
 
-  if (isLoading) {
+  if (isLoading || locationLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
@@ -108,7 +148,7 @@ export default function DashboardPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">
-          Good morning, {user?.full_name || user?.email?.split('@')[0]}!
+          {getTimeBasedGreeting()}, {user?.full_name || user?.email?.split('@')[0]}!
         </h1>
         <p className="text-gray-600">
           Here are your personalized outfit recommendations for today.
@@ -303,23 +343,31 @@ export default function DashboardPage() {
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
                 Weather
+                {location?.city && (
+                  <span className="text-sm font-normal text-gray-500 ml-2">
+                    in {location.city}
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
               {weather ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold">{weather.temp}°F</span>
-                    <span className="text-sm text-gray-600">{weather.condition}</span>
+                    <span className="text-2xl font-bold">{weather.temp}°C</span>
+                    <div className="flex items-center gap-2">
+                      {getWeatherIcon(weather.condition)}
+                      <span className="text-sm text-gray-600">{weather.condition}</span>
+                    </div>
                   </div>
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2">
                       <Thermometer className="h-4 w-4" />
-                      <span>Feels like {weather.feels_like}°F</span>
+                      <span>Feels like {weather.feels_like}°C</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Wind className="h-4 w-4" />
-                      <span>{weather.wind_speed} mph</span>
+                      <span>{weather.wind_speed} m/s</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Droplets className="h-4 w-4" />
@@ -346,6 +394,14 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+      
+      {/* Location Permission Dialog */}
+      <LocationPermissionDialog
+        open={showManualDialog}
+        onOpenChange={() => {}} // Dialog is controlled by the hook
+        onLocationSet={setLocationManually}
+        isLoading={locationLoading}
+      />
     </div>
   )
 }

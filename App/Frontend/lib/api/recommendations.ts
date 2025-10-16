@@ -50,8 +50,8 @@ export interface DailySuggestionsResponse {
 
 export const recommendationsApi = {
   getDailySuggestions: async (params: {
-    lat: number
-    lon: number
+    lat?: number
+    lon?: number
     occasion?: string
     force_refresh?: boolean
   }): Promise<DailySuggestionsResponse> => {

@@ -71,4 +71,16 @@ apiClient.interceptors.response.use(
   }
 )
 
+// Location API functions
+export interface LocationUpdateData {
+  lat: number
+  lon: number
+  city?: string
+}
+
+export const updateUserLocation = async (locationData: LocationUpdateData) => {
+  const response = await apiClient.patch('/users/me/location', locationData)
+  return response.data
+}
+
 export default apiClient

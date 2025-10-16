@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -25,6 +25,11 @@ class User(Base):
     # Profile fields
     full_name = Column(String(255), nullable=True)
     location = Column(String(255), nullable=True)
+    
+    # Location fields for weather-based recommendations
+    saved_latitude = Column(Float, nullable=True)
+    saved_longitude = Column(Float, nullable=True)
+    saved_city = Column(String(255), nullable=True)
 
     # Account status
     is_active = Column(Boolean, default=True, nullable=False)
