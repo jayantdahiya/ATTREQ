@@ -28,21 +28,31 @@ export const getCurrentPosition = (): Promise<{ lat: number; lon: number }> => {
       return
     }
 
+    // Add timeout to prevent hanging
+    const timeoutId = setTimeout(() => {
+      reject({
+        code: 3, // TIMEOUT
+        message: 'Location request timed out.',
+      })
+    }, 15000) // 15 second timeout
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        clearTimeout(timeoutId)
         resolve({
           lat: position.coords.latitude,
           lon: position.coords.longitude,
         })
       },
       (error) => {
+        clearTimeout(timeoutId)
         reject({
           code: error.code,
           message: error.message,
         })
       },
       {
-        enableHighAccuracy: true,
+        enableHighAccuracy: false, // Reduce accuracy requirements to avoid CoreLocation issues
         timeout: 10000,
         maximumAge: 300000, // 5 minutes
       }
@@ -137,5 +147,40 @@ export const checkGeolocationPermission = async (): Promise<PermissionState> => 
   } catch (error) {
     console.warn('Failed to check geolocation permission:', error)
     return 'prompt'
+  }
+}
+
+/**
+ * Save the "user has been prompted" flag to localStorage.
+ */
+export const saveUserPromptedFlag = (): void => {
+  try {
+    localStorage.setItem('attreq_user_prompted_location', 'true')
+  } catch (error) {
+    console.error('Failed to save user prompted flag to localStorage:', error)
+  }
+}
+
+/**
+ * Check if user has been prompted for location before.
+ */
+export const hasUserBeenPrompted = (): boolean => {
+  try {
+    const prompted = localStorage.getItem('attreq_user_prompted_location')
+    return prompted === 'true'
+  } catch (error) {
+    console.error('Failed to check user prompted flag:', error)
+    return false
+  }
+}
+
+/**
+ * Clear the "user has been prompted" flag from localStorage.
+ */
+export const clearUserPromptedFlag = (): void => {
+  try {
+    localStorage.removeItem('attreq_user_prompted_location')
+  } catch (error) {
+    console.error('Failed to clear user prompted flag from localStorage:', error)
   }
 }

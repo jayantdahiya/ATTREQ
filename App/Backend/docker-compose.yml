@@ -23,7 +23,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for caching (optional for Phase 1)
+  # Redis for caching
   redis:
     image: redis:7-alpine
     container_name: attreq_redis
@@ -120,10 +120,10 @@ services:
       WEAVIATE_PORT: 8080
       WEAVIATE_SCHEME: http
       
-      # External APIs (Phase 3+)
-      ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY:-}
-      ROBOFLOW_MODEL_ID: ${ROBOFLOW_MODEL_ID:-clothing-detection-ev04d/4}
-      ROBOFLOW_PROJECT: ${ROBOFLOW_PROJECT:-main-project-qsu9x}
+      # External APIs
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.0-flash}
+      GEMINI_BATCH_SIZE: ${GEMINI_BATCH_SIZE:-5}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
       
       # File Upload Settings

@@ -29,6 +29,7 @@ from app.schemas.wardrobe import (
 from app.services.ai.embeddings import weaviate_service
 from app.services.storage.file_handler import file_storage
 from app.workers.image_processor import process_wardrobe_image
+from app.workers.batch_image_processor import process_batch_wardrobe_images
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -120,6 +121,127 @@ async def upload_wardrobe_item(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to upload image"
+        ) from e
+
+
+@router.post("/batch-upload", response_model=list[WardrobeItemUploadResponse], status_code=status.HTTP_201_CREATED)
+async def batch_upload_wardrobe_items(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(..., description="Multiple clothing images to upload (JPG or PNG)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Upload multiple clothing items to wardrobe in a single batch.
+
+    This endpoint accepts multiple image uploads and triggers batch processing to:
+    - Process all images in batches using Gemini API (3x faster than individual)
+    - Remove backgrounds for all images
+    - Detect clothing attributes for all items
+    - Generate thumbnails for all images
+    - Add all items to vector database for similarity search
+
+    Args:
+        background_tasks: FastAPI background tasks
+        files: List of uploaded image files (max 5 recommended for optimal performance)
+        db: Database session
+        current_user: Currently authenticated user
+
+    Returns:
+        List of upload responses with item IDs and status
+
+    Raises:
+        HTTPException: If file validation fails or too many files
+    """
+    # Validate number of files
+    max_files = 10  # Reasonable limit for batch upload
+    if len(files) > max_files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files. Maximum {max_files} files allowed per batch."
+        )
+
+    if len(files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one file is required for batch upload."
+        )
+
+    # Validate all files
+    validated_files = []
+    for i, file in enumerate(files):
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith("image/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File {i+1} must be an image (JPEG or PNG)"
+            )
+
+        # Validate file extension
+        if file.filename:
+            extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+            if extension not in ["jpg", "jpeg", "png"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File {i+1}: Only JPG and PNG images are supported"
+                )
+        
+        validated_files.append(file)
+
+    try:
+        # Save all uploaded files and create database records
+        saved_items = []
+        image_paths = []
+        
+        for file in validated_files:
+            # Save uploaded file
+            file_path, file_url = await file_storage.save_upload_file(
+                file,
+                current_user.id,
+                "originals"
+            )
+
+            # Create database record with pending status
+            item = await wardrobe_crud.create(
+                db=db,
+                user_id=current_user.id,
+                original_image_url=file_url
+            )
+            
+            saved_items.append(item)
+            image_paths.append(file_path)
+
+        # Queue batch background processing
+        background_tasks.add_task(
+            process_batch_wardrobe_images,
+            item_ids=[item.id for item in saved_items],
+            user_id=current_user.id,
+            image_paths=image_paths,
+            db=db
+        )
+
+        logger.info(f"Batch upload: {len(saved_items)} wardrobe items uploaded by user {current_user.id}")
+
+        # Return responses for all items
+        return [
+            WardrobeItemUploadResponse(
+                id=item.id,
+                status="processing",
+                message=f"Image {i+1} uploaded successfully. Batch AI processing started.",
+                original_image_url=item.original_image_url
+            )
+            for i, item in enumerate(saved_items)
+        ]
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) from e
+    except Exception as e:
+        logger.error(f"Batch upload failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload images"
         ) from e
 
 

@@ -27,7 +27,7 @@ async def process_wardrobe_image(
     1. Update status to "processing"
     2. Remove background from image
     3. Generate thumbnail
-    4. Detect clothing attributes with Roboflow
+    4. Detect clothing attributes with Gemini API
     5. Add to Weaviate for vector search
     6. Update database with results
     7. Set status to "completed" or "failed"
@@ -77,7 +77,7 @@ async def process_wardrobe_image(
         try:
             thumbnail_path, thumbnail_url = file_storage.generate_thumbnail(
                 processed_image_path,
-                user_id,
+                str(user_id),  # Convert UUID to string
                 size=300
             )
             logger.info(f"Thumbnail generated for item {item_id}")
@@ -99,7 +99,10 @@ async def process_wardrobe_image(
                 "color_primary": None,
                 "color_secondary": None,
                 "pattern": None,
-                "confidence": 0.0
+                "season": [],
+                "occasion": [],
+                "detection_confidence": 0.0,
+                "processing_status": "failed"
             }
 
         # Step 5: Add to Weaviate
@@ -116,8 +119,8 @@ async def process_wardrobe_image(
                     color_primary=detection_result.get("color_primary"),
                     color_secondary=detection_result.get("color_secondary"),
                     pattern=detection_result.get("pattern"),
-                    season=None,  # Will be set by user or future logic
-                    occasion=None,  # Will be set by user or future logic
+                    season=detection_result.get("season", []),
+                    occasion=detection_result.get("occasion", []),
                 )
                 logger.info(f"Item {item_id} added to Weaviate")
             else:
@@ -133,7 +136,9 @@ async def process_wardrobe_image(
             "color_primary": detection_result.get("color_primary"),
             "color_secondary": detection_result.get("color_secondary"),
             "pattern": detection_result.get("pattern"),
-            "detection_confidence": detection_result.get("confidence"),
+            "season": detection_result.get("season", []),
+            "occasion": detection_result.get("occasion", []),
+            "detection_confidence": detection_result.get("detection_confidence", 0.0),
             "processing_status": "completed"
         }
 

@@ -1,22 +1,21 @@
-"""Clothing detection service using Roboflow API."""
+"""Clothing detection service using Google Gemini API."""
 
 import logging
 from pathlib import Path
 from typing import Any
 
-import aiofiles
-import httpx
 import numpy as np
 from PIL import Image
 from sklearn.cluster import KMeans
 
 from app.core.config import settings
+from app.services.ai.gemini_classifier import gemini_classifier_service
 
 logger = logging.getLogger(__name__)
 
 
 class ClothingDetectionService:
-    """Service for detecting clothing attributes using Roboflow API."""
+    """Service for detecting clothing attributes using Google Gemini API."""
 
     # Color name mapping for RGB values
     COLOR_NAMES = {
@@ -38,7 +37,7 @@ class ClothingDetectionService:
     }
 
     async def detect_clothing(self, image_path: str) -> dict[str, Any]:
-        """Detect clothing attributes from an image using Roboflow API.
+        """Detect clothing attributes from an image using Gemini API.
 
         Args:
             image_path: Path to the image file
@@ -49,7 +48,10 @@ class ClothingDetectionService:
                 - color_primary: Primary color detected
                 - color_secondary: Secondary color (optional)
                 - pattern: Pattern type (solid, striped, etc.)
-                - confidence: Detection confidence score (0-100)
+                - season: List of seasons (summer, winter, fall, spring, all)
+                - occasion: List of occasions (casual, formal, party, business, etc.)
+                - detection_confidence: Detection confidence score (0-1)
+                - processing_status: Status of processing
 
         Raises:
             FileNotFoundError: If image doesn't exist
@@ -59,56 +61,17 @@ class ClothingDetectionService:
         if not Path(image_path).exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
 
-        # Check if Roboflow API key is configured
-        if not settings.roboflow_api_key:
-            logger.warning("Roboflow API key not configured. Using fallback color detection only.")
+        # Check if Gemini API key is configured
+        if not settings.gemini_api_key:
+            logger.warning("Gemini API key not configured. Using fallback color detection only.")
             return await self._fallback_detection(image_path)
 
         try:
-            # Call Roboflow API
-            url = f"https://detect.roboflow.com/{settings.roboflow_project}/{settings.roboflow_model_id}"
-
-            async with aiofiles.open(image_path, "rb") as image_file:
-                image_data = await image_file.read()
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        url,
-                        params={"api_key": settings.roboflow_api_key},
-                        files={"file": ("image.jpg", image_data, "image/jpeg")}
-                    )
-
-            if response.status_code == 200:
-                data = response.json()
-
-                # Parse Roboflow response
-                if data.get("predictions") and len(data["predictions"]) > 0:
-                    prediction = data["predictions"][0]
-
-                    # Extract category from prediction
-                    category = prediction.get("class", "unknown").lower()
-                    confidence = prediction.get("confidence", 0) * 100
-
-                    # Extract colors from image
-                    color_primary, color_secondary = self._extract_dominant_colors(image_path)
-
-                    # Detect pattern (basic heuristic)
-                    pattern = self._detect_pattern(image_path)
-
-                    return {
-                        "category": category,
-                        "color_primary": color_primary,
-                        "color_secondary": color_secondary,
-                        "pattern": pattern,
-                        "confidence": confidence
-                    }
-                logger.warning("No predictions returned from Roboflow API")
-                return await self._fallback_detection(image_path)
-            logger.error(f"Roboflow API error: {response.status_code} - {response.text}")
-            return await self._fallback_detection(image_path)
-
+            logger.info("Using Gemini API for clothing detection")
+            return await gemini_classifier_service.classify_single_image(image_path)
         except Exception as e:
-            logger.error(f"Clothing detection failed: {str(e)}")
-            # Fall back to basic color detection
+            logger.error(f"Gemini API failed: {str(e)}")
+            # Fall back to color-only detection
             return await self._fallback_detection(image_path)
 
     async def _fallback_detection(self, image_path: str) -> dict[str, Any]:
@@ -125,11 +88,14 @@ class ClothingDetectionService:
             pattern = self._detect_pattern(image_path)
 
             return {
-                "category": None,  # Cannot detect without Roboflow
+                "category": None,  # Cannot detect without Gemini API
                 "color_primary": color_primary,
                 "color_secondary": color_secondary,
                 "pattern": pattern,
-                "confidence": 0.0
+                "season": [],
+                "occasion": [],
+                "detection_confidence": 0.0,
+                "processing_status": "completed"
             }
         except Exception as e:
             logger.error(f"Fallback detection failed: {str(e)}")
@@ -138,7 +104,10 @@ class ClothingDetectionService:
                 "color_primary": None,
                 "color_secondary": None,
                 "pattern": None,
-                "confidence": 0.0
+                "season": [],
+                "occasion": [],
+                "detection_confidence": 0.0,
+                "processing_status": "failed"
             }
 
     def _extract_dominant_colors(self, image_path: str, n_colors: int = 2) -> tuple[str | None, str | None]:

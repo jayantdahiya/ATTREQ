@@ -48,12 +48,10 @@ class Settings(BaseSettings):
     weaviate_port: int = Field(default=8080, alias="WEAVIATE_PORT")
     weaviate_scheme: str = Field(default="http", alias="WEAVIATE_SCHEME")
 
-    # External API settings (for future phases)
-    roboflow_api_key: str | None = Field(default=None, alias="ROBOFLOW_API_KEY")
-    roboflow_model_id: str = Field(
-        default="clothing-detection-ev04d/4", alias="ROBOFLOW_MODEL_ID"
-    )
-    roboflow_project: str = Field(default="main-project-qsu9x", alias="ROBOFLOW_PROJECT")
+    # External API settings
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_model_name: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL_NAME")
+    gemini_batch_size: int = Field(default=5, alias="GEMINI_BATCH_SIZE")
     openweather_api_key: str | None = Field(default=None, alias="OPENWEATHER_API_KEY")
 
     # File upload settings

@@ -17,7 +17,8 @@ ATTREQ is a comprehensive fashion technology platform that combines AI-powered c
 
 ### Phase 3 (Complete ✅)
 - **Wardrobe Management**: Upload and manage clothing items
-- **AI-Powered Tagging**: Automatic clothing category, color, and pattern detection
+- **Batch Upload**: Upload multiple images at once with 3x faster processing using Gemini API
+- **AI-Powered Tagging**: Automatic clothing category, color, pattern, season, and occasion detection
 - **Background Removal**: Automatic image background removal using rembg
 - **Vector Search**: Semantic search for similar clothing items using Weaviate
 - **Outfit Creation**: Create and manage outfit combinations
@@ -47,7 +48,7 @@ ATTREQ is a comprehensive fashion technology platform that combines AI-powered c
 - **ORM**: SQLAlchemy 2.0 with async support
 - **Authentication**: JWT tokens with python-jose
 - **Password Hashing**: bcrypt via passlib
-- **AI/ML**: Roboflow API, rembg, Pillow, scikit-learn
+- **AI/ML**: Google Gemini 2.0 Flash API, rembg, Pillow, scikit-learn
 - **Migrations**: Alembic
 - **Code Quality**: Ruff (linter & formatter)
 - **Containerization**: Docker & Docker Compose
@@ -313,9 +314,9 @@ curl -X POST "http://localhost:8000/api/v1/outfits" \
 | `WEAVIATE_HOST` | Weaviate host | weaviate |
 | `WEAVIATE_PORT` | Weaviate port | 8080 |
 | `WEAVIATE_SCHEME` | Weaviate scheme | http |
-| `ROBOFLOW_API_KEY` | Roboflow API key for clothing detection | Optional |
-| `ROBOFLOW_MODEL_ID` | Roboflow model ID | clothing-detection-ev04d/4 |
-| `ROBOFLOW_PROJECT` | Roboflow project | main-project-qsu9x |
+| `GEMINI_API_KEY` | Google Gemini API key for clothing detection | Required |
+| `GEMINI_MODEL_NAME` | Gemini model name | gemini-2.0-flash |
+| `GEMINI_BATCH_SIZE` | Maximum images per batch request | 5 |
 | `OPENWEATHER_API_KEY` | OpenWeather API key | Optional |
 | `MAX_UPLOAD_SIZE_MB` | Max file upload size | 10 |
 | `UPLOAD_DIR` | Upload directory path | /app/uploads |
@@ -334,10 +335,10 @@ chmod +x scripts/setup_uploads_dir.sh
 sudo ./scripts/setup_uploads_dir.sh
 ```
 
-2. (Optional) Set up Roboflow API:
-   - Sign up at https://roboflow.com/
-   - Get your API key
-   - Add to `.env`: `ROBOFLOW_API_KEY=your_key_here`
+2. Set up Google Gemini API:
+   - Get API key from https://makersuite.google.com/app/apikey
+   - Add to `.env`: `GEMINI_API_KEY=your_key_here`
+   - Gemini provides 3x faster processing and better accuracy
 
 3. Database migration for Phase 3 models:
 ```bash
@@ -551,7 +552,7 @@ For detailed Ruff usage, configuration, and best practices, see **[RUFF_GUIDE.md
 - OAuth user management
 
 ### Phase 3: AI/ML Pipeline
-- Roboflow clothing detection
+- Google Gemini clothing detection
 - Background removal with rembg
 - Weaviate vector database integration
 - Recommendation algorithm

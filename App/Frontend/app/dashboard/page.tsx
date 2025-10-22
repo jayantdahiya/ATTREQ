@@ -13,12 +13,13 @@ import { getFullImageUrl } from '@/lib/utils'
 import { useUserLocation } from '@/lib/hooks/useUserLocation'
 import { LocationPermissionDialog } from '@/components/location-permission-dialog'
 import { getLocationFromStorage } from '@/lib/utils/location'
+import { ErrorBoundary } from '@/components/error-boundary'
 import { Heart, RefreshCw, MapPin, Thermometer, Wind, Droplets, Sun, Cloud, CloudRain, CloudSnow, CloudLightning } from 'lucide-react'
 
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const { user } = useAuthStore()
-  const { location, isLoading: locationLoading, requestLocation, setLocationManually, showManualDialog } = useUserLocation()
+  const { location, isLoading: locationLoading, requestLocation, setLocationManually, showManualDialog, setShowManualDialog, shouldShowLocationPrompt } = useUserLocation()
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([])
   const [weather, setWeather] = useState<WeatherData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -57,8 +58,29 @@ export default function DashboardPage() {
     // If we have a location (from any source), fetch suggestions
     if (location) {
       fetchSuggestions()
+    } else if (!locationLoading) {
+      // No location and not loading - stop the main loading state
+      setIsLoading(false)
+      // Show dialog only if user hasn't been prompted before
+      if (shouldShowLocationPrompt()) {
+        setShowManualDialog(true)
+      }
     }
-  }, [location])
+  }, [location, locationLoading, shouldShowLocationPrompt])
+
+  // Fallback timeout to prevent infinite loading
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (isLoading && !locationLoading) {
+        setIsLoading(false)
+        if (!location && shouldShowLocationPrompt()) {
+          setShowManualDialog(true)
+        }
+      }
+    }, 5000) // 5 second timeout
+
+    return () => clearTimeout(timeout)
+  }, [isLoading, locationLoading, location, shouldShowLocationPrompt])
 
   const fetchSuggestions = async () => {
     setIsLoading(true)
@@ -142,18 +164,74 @@ export default function DashboardPage() {
     )
   }
 
+  // Show location prompt if no location is set
+  if (!location && !isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">
+            {getTimeBasedGreeting()}, {user?.full_name || user?.email?.split('@')[0]}!
+          </h1>
+          <p className="text-gray-600">
+            Let's set up your location to get personalized outfit recommendations.
+          </p>
+        </div>
+        
+        <div className="max-w-md mx-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Set Your Location
+              </CardTitle>
+              <CardDescription>
+                We need your location to provide weather-based outfit recommendations.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button 
+                onClick={requestLocation} 
+                className="w-full"
+                disabled={locationLoading}
+              >
+                <MapPin className="h-4 w-4 mr-2" />
+                Use Current Location
+              </Button>
+              <div className="text-center text-sm text-gray-500">or</div>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowManualDialog(true)}
+                className="w-full"
+              >
+                Enter City Name
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Location Permission Dialog */}
+        <LocationPermissionDialog
+          open={showManualDialog}
+          onOpenChange={setShowManualDialog}
+          onLocationSet={setLocationManually}
+          isLoading={locationLoading}
+        />
+      </div>
+    )
+  }
+
   const currentSuggestion = suggestions[currentIndex]
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">
-          {getTimeBasedGreeting()}, {user?.full_name || user?.email?.split('@')[0]}!
-        </h1>
-        <p className="text-gray-600">
-          Here are your personalized outfit recommendations for today.
-        </p>
-      </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">
+            {getTimeBasedGreeting()}, {user?.full_name || user?.email?.split('@')[0]}!
+          </h1>
+          <p className="text-gray-600">
+            Here are your personalized outfit recommendations for today.
+          </p>
+        </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Outfit Display */}
@@ -340,14 +418,24 @@ export default function DashboardPage() {
           {/* Weather Card */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                Weather
-                {location?.city && (
-                  <span className="text-sm font-normal text-gray-500 ml-2">
-                    in {location.city}
-                  </span>
-                )}
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Weather
+                  {location?.city && (
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      in {location.city}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowManualDialog(true)}
+                  className="text-xs"
+                >
+                  Change Location
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -398,10 +486,18 @@ export default function DashboardPage() {
       {/* Location Permission Dialog */}
       <LocationPermissionDialog
         open={showManualDialog}
-        onOpenChange={() => {}} // Dialog is controlled by the hook
+        onOpenChange={setShowManualDialog}
         onLocationSet={setLocationManually}
         isLoading={locationLoading}
       />
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <ErrorBoundary>
+      <DashboardPageContent />
+    </ErrorBoundary>
   )
 }

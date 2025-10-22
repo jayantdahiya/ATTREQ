@@ -12,6 +12,9 @@ import {
   saveLocationToStorage,
   clearLocationFromStorage,
   geocodeCity,
+  saveUserPromptedFlag,
+  hasUserBeenPrompted,
+  clearUserPromptedFlag,
   LocationData,
   GeolocationError,
 } from '@/lib/utils/location'
@@ -24,6 +27,8 @@ export interface UseUserLocationReturn {
   setLocationManually: (city: string) => Promise<void>
   clearLocation: () => void
   showManualDialog: boolean
+  setShowManualDialog: (show: boolean) => void
+  shouldShowLocationPrompt: () => boolean
 }
 
 export const useUserLocation = (): UseUserLocationReturn => {
@@ -32,6 +37,7 @@ export const useUserLocation = (): UseUserLocationReturn => {
   const [error, setError] = useState<string | null>(null)
   const [showManualDialog, setShowManualDialog] = useState(false)
   const hasTriedGeolocation = useRef(false)
+  const hasPromptedUser = useRef(false)
 
   // Sync location with backend
   const syncWithBackend = useCallback(async (locationData: LocationData) => {
@@ -63,6 +69,8 @@ export const useUserLocation = (): UseUserLocationReturn => {
 
       setLocation(locationData)
       saveLocationToStorage(locationData)
+      saveUserPromptedFlag() // Mark user as prompted
+      hasPromptedUser.current = true
       
       // Sync with backend in background
       syncWithBackend(locationData)
@@ -106,12 +114,29 @@ export const useUserLocation = (): UseUserLocationReturn => {
     const savedLocation = getLocationFromStorage()
     if (savedLocation) {
       setLocation(savedLocation)
-    } else if (!hasTriedGeolocation.current) {
-      // No saved location, try to get current position automatically
-      hasTriedGeolocation.current = true
-      requestLocation()
+      // If we have a saved location, mark user as prompted
+      saveUserPromptedFlag()
+      hasPromptedUser.current = true
+    } else {
+      // No saved location - check if user has been prompted before
+      const userHasBeenPrompted = hasUserBeenPrompted()
+      if (!userHasBeenPrompted) {
+        // First time user - they haven't been prompted yet
+        hasPromptedUser.current = false
+      } else {
+        // User has been prompted before - don't show dialog automatically
+        hasPromptedUser.current = true
+      }
     }
-  }, [requestLocation])
+  }, [])
+
+  // Mark user as prompted whenever location is set
+  useEffect(() => {
+    if (location && !hasPromptedUser.current) {
+      saveUserPromptedFlag()
+      hasPromptedUser.current = true
+    }
+  }, [location])
 
   // Set location manually using city name
   const setLocationManually = useCallback(async (city: string) => {
@@ -130,6 +155,8 @@ export const useUserLocation = (): UseUserLocationReturn => {
       setLocation(locationData)
       saveLocationToStorage(locationData)
       setShowManualDialog(false) // Close the dialog
+      saveUserPromptedFlag() // Mark user as prompted
+      hasPromptedUser.current = true
       
       // Sync with backend
       await syncWithBackend(locationData)
@@ -152,12 +179,23 @@ export const useUserLocation = (): UseUserLocationReturn => {
   const clearLocation = useCallback(() => {
     setLocation(null)
     clearLocationFromStorage()
+    clearUserPromptedFlag() // Clear the prompted flag when location is cleared
     setError(null)
     setShowManualDialog(false)
+    hasPromptedUser.current = false
     toast.info('Location cleared', {
       description: 'You can set a new location anytime.',
     })
   }, [])
+
+  // Check if we should show the location prompt
+  const shouldShowLocationPrompt = useCallback(() => {
+    if (location) {
+      return false // If we have location, don't show prompt
+    }
+    const userPrompted = hasUserBeenPrompted()
+    return !userPrompted // Check localStorage directly
+  }, [location])
 
   return {
     location,
@@ -167,5 +205,7 @@ export const useUserLocation = (): UseUserLocationReturn => {
     setLocationManually,
     clearLocation,
     showManualDialog,
+    setShowManualDialog,
+    shouldShowLocationPrompt,
   }
 }
