@@ -103,7 +103,7 @@ services:
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
       
       # CORS Configuration
-      BACKEND_CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000","http://localhost:8000","http://127.0.0.1:8000"]'
+      BACKEND_CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000","http://localhost:8000","http://127.0.0.1:8000","https://attreq.vercel.app","https://*.vercel.app"]'
       
       # Google OAuth (Optional - Phase 2)
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
