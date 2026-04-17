@@ -1,16 +1,50 @@
-node_modules/
-.expo/
-npm-debug.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.orig.*
-web-build/
-
-# macOS
+# OS / editor
 .DS_Store
-.docs
-.cursor
+.cursor/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+build/
+dist/
+
+# Node / frontend
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!.pi-dev.env
+
+# Runtime artifacts
+uploads/
+logs/
+*.log
+
+# Repo-specific generated data
+.codebase-memory/
+
+# Legacy / archived local folders
 LLM/
+web-build/

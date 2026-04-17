@@ -1,0 +1,168 @@
+# Docker Compose for ATTREQ Backend Development
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: attreq_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: attreq_db
+      POSTGRES_USER: attreq_user
+      POSTGRES_PASSWORD: attreq_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - attreq_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attreq_user -d attreq_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: attreq_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - attreq_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Weaviate Vector Database
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.0
+    container_name: attreq_weaviate
+    restart: unless-stopped
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
+      ENABLE_MODULES: 'text2vec-transformers'
+      TRANSFORMERS_INFERENCE_API: 'http://t2v-transformers:8080'
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    ports:
+      - "8080:8080"
+    networks:
+      - attreq_network
+    depends_on:
+      - t2v-transformers
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Text2Vec Transformers for Weaviate
+  t2v-transformers:
+    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
+    container_name: attreq_transformers
+    restart: unless-stopped
+    environment:
+      ENABLE_CUDA: '0'
+    networks:
+      - attreq_network
+
+  # ATTREQ Backend API
+  backend:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    container_name: attreq_backend
+    restart: unless-stopped
+    environment:
+      # Database Configuration
+      DATABASE_URL: postgresql+asyncpg://attreq_user:attreq_password@postgres:5432/attreq_db
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: attreq_db
+      POSTGRES_USER: attreq_user
+      POSTGRES_PASSWORD: attreq_password
+      
+      # Application Settings
+      APP_NAME: ATTREQ
+      APP_ENV: development
+      APP_DEBUG: "true"
+      
+      # JWT Configuration (will be overridden by .env if present)
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-here-generate-with-openssl-rand-hex-32}
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+      
+      # CORS Configuration
+      BACKEND_CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000","http://localhost:8000","http://127.0.0.1:8000","https://attreq.vercel.app","https://*.vercel.app"]'
+      
+      # Google OAuth (Optional - Phase 2)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/google/callback}
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # Weaviate Configuration
+      WEAVIATE_HOST: weaviate
+      WEAVIATE_PORT: 8080
+      WEAVIATE_SCHEME: http
+      
+      # External APIs
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.0-flash}
+      GEMINI_BATCH_SIZE: ${GEMINI_BATCH_SIZE:-5}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+      
+      # File Upload Settings
+      MAX_UPLOAD_SIZE_MB: 10
+      UPLOAD_DIR: /app/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/api:/app
+      - ../../apps/api/uploads:/app/uploads
+    networks:
+      - attreq_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: >
+      sh -c "
+        echo 'Waiting for database to be ready...' &&
+        sleep 10 &&
+        echo 'Running database migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting FastAPI server...' &&
+        uvicorn attreq_api.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+  weaviate_data:
+    driver: local
+
+networks:
+  attreq_network:
+    driver: bridge

@@ -1,0 +1,15 @@
+{
+  "name": "attreq",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "make dev",
+    "dev:api": "make dev-api",
+    "dev:web": "make dev-web",
+    "build": "make build",
+    "lint": "make lint",
+    "test": "make test"
+  }
+}
