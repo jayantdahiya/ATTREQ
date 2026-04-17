@@ -1,5 +1,7 @@
 """Core configuration settings for ATTREQ backend."""
 
+import json
+
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
 
@@ -32,6 +34,10 @@ class Settings(BaseSettings):
     backend_cors_origins: list[str] = Field(
         default=["http://localhost:3000", "http://127.0.0.1:3000"], alias="BACKEND_CORS_ORIGINS"
     )
+    trusted_hosts: list[str] = Field(
+        default=["attreq.com", "*.attreq.com", "localhost", "127.0.0.1"],
+        alias="TRUSTED_HOSTS",
+    )
 
     # Google OAuth settings (optional)
     google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
@@ -62,10 +68,25 @@ class Settings(BaseSettings):
     def assemble_cors_origins(cls, v):
         """Parse CORS origins from string or list."""
         if isinstance(v, str):
-            return [i.strip() for i in v.split(",")]
+            raw = v.strip()
+            if raw.startswith("["):
+                return json.loads(raw)
+            return [i.strip() for i in raw.split(",") if i.strip()]
         if isinstance(v, list):
             return v
         raise ValueError("CORS origins must be a string or list")
+
+    @validator("trusted_hosts", pre=True)
+    def assemble_trusted_hosts(cls, v):
+        """Parse trusted hosts from string or list."""
+        if isinstance(v, str):
+            raw = v.strip()
+            if raw.startswith("["):
+                return json.loads(raw)
+            return [i.strip() for i in raw.split(",") if i.strip()]
+        if isinstance(v, list):
+            return v
+        raise ValueError("Trusted hosts must be a string or list")
 
     @validator("secret_key")
     def validate_secret_key(cls, v):

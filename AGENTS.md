@@ -294,3 +294,105 @@ docker-compose logs -f redis
 - **Health Check**: http://localhost:8000/health
 - **Weaviate**: http://localhost:8080
 - **Redis**: localhost:6379
+
+## Codebase Knowledge Graph (codebase-memory-mcp)
+
+This project is indexed in `codebase-memory-mcp` as **`Users-Work-Desktop-Personal-Project Attreq`**. Always use this MCP for code discovery before falling back to Grep/Glob/Read.
+
+### Project Identifier
+
+All MCP calls require the `project` parameter:
+```
+"project": "Users-Work-Desktop-Personal-Project Attreq"
+```
+
+### Mandatory Workflow
+
+1. **Finding functions, classes, routes, variables** -> use `search_graph` (not Grep/Glob)
+2. **Reading source code** -> use `search_graph` to find `qualified_name`, then `get_code_snippet`
+3. **Tracing call chains / impact analysis** -> use `trace_call_path` (not grep for function names)
+4. **Architecture overview** -> use `get_architecture`
+5. **Complex multi-hop queries** -> use `query_graph` with Cypher
+6. **Text pattern search with graph enrichment** -> use `search_code`
+
+### Tool Reference
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `index_repository` | Re-index after major changes | `repo_path`, `mode` (full/fast) |
+| `index_status` | Check if index is current | `project` |
+| `list_projects` | List all indexed projects | (none) |
+| `get_architecture` | High-level project overview | `project`, `aspects` (array, use `["all"]`) |
+| `get_graph_schema` | Node labels, edge types | `project` |
+| `search_graph` | Find functions/classes/routes/variables | `project`, `label`, `name_pattern`, `file_pattern`, `min_degree`, `limit` |
+| `get_code_snippet` | Read source for a symbol | `qualified_name` (from search_graph), `project`, `include_neighbors` |
+| `search_code` | Grep + graph enrichment | `pattern`, `project`, `mode` (compact/full/files), `file_pattern`, `limit` |
+| `trace_call_path` | Who calls / what calls | `function_name`, `project`, `direction` (inbound/outbound/both), `depth` |
+| `query_graph` | Raw Cypher queries | `query`, `project`, `max_rows` |
+| `detect_changes` | Git diff impact analysis | `project`, `scope`, `depth`, `base_branch` |
+| `manage_adr` | Architecture Decision Records | `project`, `mode` (get/update/sections), `content` |
+| `ingest_traces` | Add runtime traces to graph | `traces` (array of objects), `project` |
+| `delete_project` | Remove project from index | `project` |
+
+### Graph Schema (Current)
+
+**Node Labels**: Section (1014), Variable (205), Function (176), File (152), Module (152), Method (106), Class (80), Folder (44), Route (24), Interface (20), Type (3), Project (1)
+
+**Edge Types**: DEFINES, CALLS, USAGE, CONTAINS_FILE, DEFINES_METHOD, CONTAINS_FOLDER, HANDLES, DECORATES, WRITES, TESTS
+
+### Common Patterns
+
+**Find all API routes:**
+```
+search_graph(project=..., label="Route")
+```
+
+**Find a class and read its source:**
+```
+search_graph(project=..., label="Class", name_pattern="BackgroundRemovalService")
+-> get qualified_name from result
+get_code_snippet(project=..., qualified_name="...", include_neighbors=true)
+```
+
+**Trace who calls a function (3 hops):**
+```
+trace_call_path(project=..., function_name="remove_background", direction="both", depth=3)
+```
+
+**Cypher - list functions with most callers:**
+```
+query_graph(project=..., query="MATCH (f:Function) RETURN f.name, f.file_path ORDER BY f.name LIMIT 10")
+```
+
+**Find high-degree nodes (most connected, potential refactor targets):**
+```
+search_graph(project=..., label="Function", min_degree=5)
+```
+
+### Re-indexing
+
+Run `index_repository` with `mode: "full"` after significant structural changes (new files, renamed modules, deleted code). Use `mode: "fast"` for incremental updates.
+
+### ADR (Architecture Decision Record)
+
+An ADR is stored in the graph. Use `manage_adr(mode="get")` to read it, `manage_adr(mode="update", content="...")` to update it. Keep it current when architectural decisions change.
+
+---
+
+## Raspberry Pi Deployment Context (Updated 2026-04-01)
+
+- **Pi host**: `jayant@192.168.29.27`
+- **Backend local path**: `App/Backend`
+- **Backend remote path**: `/home/jayant/workspaces/attreq-backend`
+- **Deployment tool**: `pi-dev` (`doctor -> sync -> compose`)
+- **Pi runtime**: Docker Compose with `docker-compose.prod.yml`
+- **Current Pi backend health (LAN)**: `http://192.168.29.27:8000/health` -> `200 OK`
+- **Cloudflare Tunnel public URL**: `https://dev-home-pi.online/`
+- **Tunnel ingress target**: `http://localhost:8000` on Pi (configured in Cloudflare Zero Trust)
+- **Cloudflare health URL**: `https://dev-home-pi.online/health` -> `200 OK`
+- **Important env for production host validation**:
+  `TRUSTED_HOSTS=["attreq.com","*.attreq.com","localhost","127.0.0.1","192.168.29.27","dev-home-pi.online","*.dev-home-pi.online"]`
+- **Known behavior**:
+  - If the public URL returns `400 Invalid host header`, add hostname to `TRUSTED_HOSTS`.
+  - If the public URL returns `502` right after deploy, wait for backend startup to complete and recheck health.
+  - Production compose currently runs `postgres`, `redis`, and `backend`; `weaviate` is not in `docker-compose.prod.yml`.

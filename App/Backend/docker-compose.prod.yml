@@ -64,6 +64,7 @@ services:
       
       # CORS Configuration
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS}
       
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}

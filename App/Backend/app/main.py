@@ -60,7 +60,7 @@ app.add_middleware(
 
 # Add trusted host middleware for security
 if settings.app_env == "production":
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["attreq.com", "*.attreq.com"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 
 # Mount static files directory for uploads
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
