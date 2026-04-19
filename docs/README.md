@@ -43,7 +43,7 @@ These paths are the current working structure:
 
 - `apps/api` exists and is the active backend service.
 - `apps/web` exists and represents the current web client baseline.
-- `apps/mobile` is planned but does not exist yet.
+- `apps/mobile` exists as the active mobile client baseline.
 - `infra/docker` contains active container orchestration assets.
 - `research/` contains model and experimentation assets outside the docs system.
 

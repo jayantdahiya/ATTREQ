@@ -29,6 +29,7 @@ node_modules/
 .next/
 out/
 coverage/
+.expo/
 *.tsbuildinfo
 
 # Env / secrets

@@ -10,6 +10,7 @@
 
 ```text
 apps/api            FastAPI backend using a src layout (`src/attreq_api`)
+apps/landing        Standalone Next.js landing app (`src/app`)
 apps/web            Next.js frontend using a src layout (`src/app`, `src/components`, `src/lib`)
 infra/docker        Docker Compose definitions
 scripts/dev         Local developer helpers
@@ -26,6 +27,7 @@ research            Research and model work
 make compose-up
 make compose-down
 make dev-api
+make dev-landing
 make dev-web
 make test
 make lint
@@ -40,6 +42,8 @@ make lint
 
 ## Frontend Notes
 
+- Landing app root: `apps/landing/src/app`
+- Landing local run command: `cd apps/landing && npm run dev`
 - App Router root: `apps/web/src/app`
 - Shared UI components: `apps/web/src/components`
 - Shared client code: `apps/web/src/lib`

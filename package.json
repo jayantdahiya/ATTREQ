@@ -2,14 +2,17 @@
   "name": "attreq",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/mobile"
   ],
   "scripts": {
     "dev": "make dev",
     "dev:api": "make dev-api",
     "dev:web": "make dev-web",
+    "dev:mobile": "make dev-mobile",
     "build": "make build",
     "lint": "make lint",
-    "test": "make test"
+    "test": "make test",
+    "test:mobile": "cd apps/mobile && npm test"
   }
 }

@@ -1,24 +1,25 @@
 """Batch image processing worker for wardrobe items using Gemini API."""
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from attreq_api.config.database import AsyncSessionLocal
 from attreq_api.config.settings import settings
 from attreq_api.crud.wardrobe import wardrobe_crud
 from attreq_api.services.ai.background_removal import background_removal_service
 from attreq_api.services.ai.embeddings import weaviate_service
 from attreq_api.services.ai.gemini_classifier import gemini_classifier_service
 from attreq_api.services.storage.file_handler import file_storage
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 
 async def process_batch_wardrobe_images(
-    item_ids: list[UUID], user_id: UUID, image_paths: list[str], db: AsyncSession
+    item_ids: list[UUID], user_id: UUID, image_paths: list[str]
 ) -> None:
     """Process multiple wardrobe images in batches using Gemini API.
 
@@ -26,51 +27,44 @@ async def process_batch_wardrobe_images(
         item_ids: List of wardrobe item IDs to process
         user_id: User ID who owns the items
         image_paths: List of image file paths
-        db: Database session
-
-    Raises:
-        ValueError: If lists don't match in length
-        Exception: If batch processing fails
     """
     if len(item_ids) != len(image_paths):
         raise ValueError("Item IDs and image paths must have the same length")
 
     logger.info(f"Processing batch of {len(image_paths)} wardrobe images for user {user_id}")
 
-    # Group images by batch size
-    batch_size = settings.gemini_batch_size
-    processed_count = 0
+    async with AsyncSessionLocal() as db:
+        batch_size = settings.gemini_batch_size
+        processed_count = 0
 
-    for i in range(0, len(image_paths), batch_size):
-        batch_item_ids = item_ids[i : i + batch_size]
-        batch_image_paths = image_paths[i : i + batch_size]
+        for i in range(0, len(image_paths), batch_size):
+            batch_item_ids = item_ids[i : i + batch_size]
+            batch_image_paths = image_paths[i : i + batch_size]
 
-        logger.info(f"Processing batch {i // batch_size + 1}: {len(batch_image_paths)} images")
+            logger.info(f"Processing batch {i // batch_size + 1}: {len(batch_image_paths)} images")
 
-        try:
-            # Process batch with Gemini API
-            await _process_single_batch(
-                batch_item_ids=batch_item_ids,
-                batch_image_paths=batch_image_paths,
-                user_id=user_id,
-                db=db,
-            )
-            processed_count += len(batch_image_paths)
+            try:
+                await _process_single_batch(
+                    batch_item_ids=batch_item_ids,
+                    batch_image_paths=batch_image_paths,
+                    user_id=user_id,
+                    db=db,
+                )
+                processed_count += len(batch_image_paths)
 
-        except Exception as e:
-            logger.error(f"Batch processing failed for batch {i // batch_size + 1}: {str(e)}")
-            # Fallback to individual processing for this batch
-            await _fallback_to_individual_processing(
-                batch_item_ids=batch_item_ids,
-                batch_image_paths=batch_image_paths,
-                user_id=user_id,
-                db=db,
-            )
-            processed_count += len(batch_image_paths)
+            except Exception as e:
+                logger.error(f"Batch processing failed for batch {i // batch_size + 1}: {str(e)}")
+                await _fallback_to_individual_processing(
+                    batch_item_ids=batch_item_ids,
+                    batch_image_paths=batch_image_paths,
+                    user_id=user_id,
+                    db=db,
+                )
+                processed_count += len(batch_image_paths)
 
-    logger.info(
-        f"Completed batch processing: {processed_count}/{len(image_paths)} images processed"
-    )
+        logger.info(
+            f"Completed batch processing: {processed_count}/{len(image_paths)} images processed"
+        )
 
 
 async def _process_single_batch(
@@ -213,8 +207,11 @@ async def _process_single_item(
             )
             processed_image_path = str(file_storage.processed_dir / processed_filename)
 
-            # Remove background
-            background_removal_service.remove_background(image_path, processed_image_path)
+            await asyncio.to_thread(
+                background_removal_service.remove_background,
+                image_path,
+                processed_image_path,
+            )
 
             # Get URL for processed image
             processed_image_url = file_storage.get_file_url(processed_image_path)
@@ -232,10 +229,11 @@ async def _process_single_item(
 
         # Generate thumbnail
         try:
-            thumbnail_path, thumbnail_url = file_storage.generate_thumbnail(
+            thumbnail_path, thumbnail_url = await asyncio.to_thread(
+                file_storage.generate_thumbnail,
                 processed_image_path,
-                str(user_id),  # Convert UUID to string
-                size=300,
+                str(user_id),
+                300,
             )
 
             # Update with thumbnail URL

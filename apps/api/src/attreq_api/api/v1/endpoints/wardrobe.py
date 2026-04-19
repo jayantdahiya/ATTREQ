@@ -96,7 +96,6 @@ async def upload_wardrobe_item(
             item_id=item.id,
             user_id=current_user.id,
             original_image_path=file_path,
-            db=db,
         )
 
         logger.info(f"Wardrobe item {item.id} uploaded by user {current_user.id}")
@@ -211,7 +210,6 @@ async def batch_upload_wardrobe_items(
             item_ids=[item.id for item in saved_items],
             user_id=current_user.id,
             image_paths=image_paths,
-            db=db,
         )
 
         logger.info(

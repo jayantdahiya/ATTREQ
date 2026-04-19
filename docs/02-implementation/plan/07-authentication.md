@@ -20,6 +20,13 @@ Support reliable mobile authentication for the planned Expo app without forcing 
 3. The client stores refresh-session material in SecureStore.
 4. The client stores short-lived access state in the auth store and enables protected navigation.
 
+Current contract:
+
+- `POST /auth/login`
+- `Content-Type: application/x-www-form-urlencoded`
+- fields: `username`, `password`
+- response: `access_token`, `refresh_token`, `token_type`, `user`
+
 ### Bootstrap on Launch
 
 1. The app checks SecureStore during startup.
@@ -37,6 +44,13 @@ Support reliable mobile authentication for the planned Expo app without forcing 
 - Use a dedicated refresh action in the auth layer.
 - If the current backend expects the refresh token in the request body, preserve that explicit contract until the backend is intentionally changed.
 - On refresh failure, the user should be logged out cleanly rather than left in an indeterminate state.
+
+Current contract:
+
+- `POST /auth/refresh`
+- `Content-Type: application/json`
+- body: `{ "refresh_token": string }`
+- response: `access_token`, `token_type`
 
 ## Router Protection
 
@@ -71,6 +85,14 @@ It should not own large user-profile datasets that belong in query state.
 - `me` or current-user data should come from TanStack Query.
 - On logout, clear auth state and invalidate or clear related query caches.
 - On refresh success, retry failed authenticated requests where appropriate.
+
+## Current Mobile Action Mapping
+
+- Recommendation cards do not currently include persisted outfit IDs.
+- The mobile client should materialize a suggestion through `POST /outfits` before calling:
+  - `POST /outfits/{outfit_id}/wear`
+  - `POST /outfits/{outfit_id}/feedback`
+- This keeps wear tracking and feedback wired without inventing a separate recommendation-action API.
 
 ## Security Notes
 

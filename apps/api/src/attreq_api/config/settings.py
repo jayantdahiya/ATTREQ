@@ -32,7 +32,24 @@ class Settings(BaseSettings):
 
     # CORS settings
     backend_cors_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://127.0.0.1:3000"], alias="BACKEND_CORS_ORIGINS"
+        default=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+        ],
+        alias="BACKEND_CORS_ORIGINS",
+    )
+    backend_cors_origin_regex: str = Field(
+        default=(
+            r"^https?://("
+            r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+            r"192\.168\.\d{1,3}\.\d{1,3}|"
+            r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+            r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"
+            r")(:\d+)?$"
+        ),
+        alias="BACKEND_CORS_ORIGIN_REGEX",
     )
     trusted_hosts: list[str] = Field(
         default=["attreq.com", "*.attreq.com", "localhost", "127.0.0.1"],

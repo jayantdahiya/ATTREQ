@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "ATTREQ",
+    "slug": "attreq-mobile",
+    "scheme": "attreq",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.attreq.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "ATTREQ needs photo access so you can upload wardrobe items.",
+        "NSCameraUsageDescription": "ATTREQ needs camera access so you can capture wardrobe items.",
+        "NSLocationWhenInUseUsageDescription": "ATTREQ uses your location to fetch weather-aware outfit suggestions."
+      }
+    },
+    "android": {
+      "package": "com.attreq.mobile",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

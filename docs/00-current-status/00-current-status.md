@@ -6,11 +6,11 @@ This file explains how to interpret the ATTREQ docs after the frontend direction
 
 - `apps/api` exists and is the active backend service.
 - `apps/web` exists and is a working baseline web client.
-- `apps/mobile` is planned and documented, but it does not exist yet.
+- `apps/mobile` now exists as the active Expo + React Native client baseline.
 - React Native is now the next primary frontend direction for ATTREQ.
 - The backend, wardrobe pipeline, recommendations, and auth flows already exist in some form.
-- The web client still contains unresolved integration gaps and should not be treated as the long-term client direction.
-- Current-status docs must never describe planned mobile work as if it were already implemented.
+- The web client remains a legacy/supporting surface and should not be treated as the long-term client direction.
+- Mobile implementation now exists, but it still needs dependency installation, device validation, and release hardening before it should be described as production-ready.
 
 ## How To Read The Docs
 
@@ -29,7 +29,7 @@ If any doc conflicts with the codebase, the codebase is the final source of trut
 ## Important Caveats
 
 - The repo still contains a web client, but that does not make the web client the future source of truth.
-- The active implementation plan is mobile-first; the current codebase is not yet mobile-first.
+- The active implementation plan is mobile-first, and the repo now includes an `apps/mobile` baseline that reflects that direction.
 - Active docs are expected to use the current repo layout and mobile-first terminology consistently.
 - Product vision docs may still discuss future features such as Style DNA, richer history, shopping integrations, and broader growth plans. Treat those as roadmap intent, not implementation proof.
 - Archive docs are preserved for context only and are not authoritative.
@@ -39,7 +39,7 @@ If any doc conflicts with the codebase, the codebase is the final source of trut
 If asked whether something is already built:
 
 - check `01-task-tracker.md` first,
-- then verify against `apps/api` or `apps/web`,
+- then verify against `apps/api`, `apps/mobile`, or `apps/web`,
 - never infer it from the mobile plan alone.
 
 If asked how the system should be built going forward:

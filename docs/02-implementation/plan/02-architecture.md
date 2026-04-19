@@ -5,7 +5,7 @@
 ```text
 Users
   |
-  +-- Planned Primary Client: Expo + React Native (`apps/mobile`)
+  +-- Primary Client Baseline: Expo + React Native (`apps/mobile`)
   |
   +-- Existing Supporting Client: Next.js (`apps/web`)
            |
@@ -21,7 +21,7 @@ Users
 
 ## Client Roles
 
-### `apps/mobile` (planned)
+### `apps/mobile`
 
 The mobile app is the intended primary client. It owns the daily user experience:
 

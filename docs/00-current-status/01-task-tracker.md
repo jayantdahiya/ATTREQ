@@ -33,25 +33,25 @@ Legend:
 
 ## C) Pending Mobile Implementation Work
 
-- [ ] Create `apps/mobile` as the new primary client
-- [ ] Bootstrap Expo + TypeScript + Expo Router foundation
-- [ ] Implement TanStack Query, Zustand, Axios, and Zod/RHF foundations for native
-- [ ] Implement mobile auth session bootstrap using SecureStore and token refresh
-- [ ] Implement protected-route structure with Expo Router
-- [ ] Implement wardrobe capture and upload flows using image picker and camera
-- [ ] Implement dashboard recommendations flow in native UI
-- [ ] Implement native wear tracking and outfit feedback loop
-- [ ] Implement notification registration and daily reminder flow
-- [ ] Add mobile unit, integration, and E2E coverage
+- [x] Create `apps/mobile` as the new primary client
+- [x] Bootstrap Expo + TypeScript + Expo Router foundation
+- [x] Implement TanStack Query, Zustand, Axios, and Zod/RHF foundations for native
+- [x] Implement mobile auth session bootstrap using SecureStore and token refresh
+- [x] Implement protected-route structure with Expo Router
+- [x] Implement wardrobe capture and upload flows using image picker and camera
+- [x] Implement dashboard recommendations flow in native UI
+- [x] Implement native wear tracking and outfit feedback loop
+- [x] Implement notification registration and daily reminder flow
+- [x] Add mobile unit, integration, and E2E coverage
 - [ ] Define mobile build, internal distribution, and release process
 
 ## D) Pending Backend Work Needed For Mobile
 
-- [ ] Fix client/backend auth contract mismatches that still affect the current web client and would affect mobile
+- [x] Fix client/backend auth contract mismatches that still affect the current web client and would affect mobile
 - [ ] Complete Alembic migration coverage for wardrobe and outfit models
 - [ ] Normalize clothing category semantics end to end
 - [ ] Replace placeholder geocoding flow with a real provider-backed implementation
-- [ ] Expand automated backend test coverage for critical flows
+- [x] Expand automated backend test coverage for critical flows
 - [ ] Re-verify deployment assumptions for a mobile-first client architecture
 
 ## E) Docs Migration Completed
@@ -65,6 +65,6 @@ Legend:
 
 ## F) Important Status Notes
 
-- [x] `apps/mobile` is not implemented yet and should never be described as present-day functionality
+- [x] `apps/mobile` is now implemented as a source baseline and should be treated as the primary frontend code path in the repo
 - [x] The current web client remains useful for backend integration checking and legacy continuity
-- [ ] The current frontend contract issues in auth, recommendations, and geocoding are still open until addressed in the new mobile-first execution phase
+- [ ] Geocoding is still intentionally deferred and recommendation actions still rely on outfit materialization through `/outfits`

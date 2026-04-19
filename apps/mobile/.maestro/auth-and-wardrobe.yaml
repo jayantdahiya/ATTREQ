@@ -1,0 +1,11 @@
+appId: com.attreq.mobile
+---
+- launchApp
+- assertVisible: "Sign in"
+- tapOn: "Email"
+- inputText: "test@example.com"
+- tapOn: "Password"
+- inputText: "Password123"
+- tapOn: "Sign in"
+- assertVisible: "Today"
+- assertVisible: "Wardrobe"

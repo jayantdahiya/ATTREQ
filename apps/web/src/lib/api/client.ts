@@ -41,12 +41,7 @@ apiClient.interceptors.response.use(
 
         const response = await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
-          {},
-          {
-            headers: {
-              Authorization: `Bearer ${refreshToken}`,
-            },
-          }
+          { refresh_token: refreshToken }
         )
 
         const { access_token } = response.data

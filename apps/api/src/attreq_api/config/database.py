@@ -50,8 +50,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """Initialize database tables."""
     async with engine.begin() as conn:
-        # Import all models to ensure they are registered
-        from attreq_api.models import user  # noqa: F401
+        # Import all models to ensure they are registered.
+        from attreq_api import models  # noqa: F401
 
         await conn.run_sync(Base.metadata.create_all)
 
