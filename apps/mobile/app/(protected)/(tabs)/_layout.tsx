@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs } from 'expo-router'
+import { useEffect } from 'react'
 import { View } from 'react-native'
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 
@@ -9,7 +10,9 @@ import { useThemeColors } from '@/theme/colors'
 function TabIcon({ color, focused, name }: { color: string; focused: boolean; name: keyof typeof Ionicons.glyphMap }) {
   const scale = useSharedValue(focused ? 1.05 : 1)
 
-  scale.value = withTiming(focused ? 1.08 : 1, { duration: 220, easing: Easing.out(Easing.quad) })
+  useEffect(() => {
+    scale.value = withTiming(focused ? 1.08 : 1, { duration: 220, easing: Easing.out(Easing.quad) })
+  }, [focused, scale])
 
   const iconStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
