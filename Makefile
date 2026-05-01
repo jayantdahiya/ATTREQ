@@ -1,6 +1,7 @@
 COMPOSE_DEV := infra/docker/compose.api.yml
 COMPOSE_LOCAL := infra/docker/compose.api.dev.yml
 COMPOSE_PROD := infra/docker/compose.api.prod.yml
+ENV_FILE := --env-file .env
 PYTHON_BIN := .venv/bin/python
 
 .PHONY: help dev dev-api dev-landing dev-web dev-mobile build build-web test lint format compose-up compose-down compose-logs compose-local-up compose-prod-up compose-prod-down api-shell migrate clean
@@ -56,13 +57,13 @@ format:
 	cd apps/api && ../../$(PYTHON_BIN) -m ruff format src tests
 
 compose-up:
-	docker compose -f $(COMPOSE_DEV) up -d --build
+	docker compose -f $(COMPOSE_DEV) $(ENV_FILE) up -d --build
 
 compose-down:
-	docker compose -f $(COMPOSE_DEV) down
+	docker compose -f $(COMPOSE_DEV) $(ENV_FILE) down
 
 compose-logs:
-	docker compose -f $(COMPOSE_DEV) logs -f
+	docker compose -f $(COMPOSE_DEV) $(ENV_FILE) logs -f
 
 compose-local-up:
 	docker compose -f $(COMPOSE_LOCAL) up -d

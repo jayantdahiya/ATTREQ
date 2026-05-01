@@ -59,11 +59,11 @@ export function Button({
   const content = typeof children === 'string' ? children : label
 
   const palette: Record<ButtonVariant, { bg: string; border: string; text: string }> = {
-    primary: { bg: colors.accentMoss, border: colors.accentMoss, text: colors.textPrimary },
+    primary: { bg: colors.accentMoss, border: colors.accentMoss, text: '#F0EDE6' },
     secondary: { bg: colors.bgRaised, border: colors.borderSubtle, text: colors.textPrimary },
     ghost: { bg: 'transparent', border: 'transparent', text: colors.accentGold },
-    danger: { bg: colors.accentClay, border: colors.accentClay, text: colors.textPrimary },
-    premium: { bg: 'transparent', border: colors.accentGold, text: colors.accentGold },
+    danger: { bg: 'transparent', border: colors.accentClay, text: colors.accentClay },
+    premium: { bg: colors.accentGold, border: colors.accentGold, text: '#1A1410' },
   }
 
   return (

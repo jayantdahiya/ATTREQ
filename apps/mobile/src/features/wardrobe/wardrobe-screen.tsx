@@ -1,28 +1,54 @@
 import { Ionicons } from '@expo/vector-icons'
-import { FlashList } from '@shopify/flash-list'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as ImagePicker from 'expo-image-picker'
 import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useState } from 'react'
-import { Alert, View } from 'react-native'
+import { Alert, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
-import { AnimatedListItem } from '@/components/common/animated-list-item'
+import { EditorialCard, EditorialHeader, GarmentTile, IconCircle, MonoLabel, fontFamily, type GarmentTone } from '@/components/attreq/editorial'
 import { EmptyState } from '@/components/common/empty-state'
 import { LoadingScreen } from '@/components/common/loading-screen'
-import { ScreenHeader } from '@/components/common/screen-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Text } from '@/components/ui/text'
 import { authApi } from '@/lib/api/auth'
 import { queryKeys } from '@/lib/query/query-client'
 import { wardrobeApi, type UploadAssetInput } from '@/lib/api/wardrobe'
-import { WardrobeItemCard } from '@/features/wardrobe/wardrobe-item-card'
+import { resolveApiImageUrl } from '@/lib/utils/images'
 import { useThemeColors } from '@/theme/colors'
+import type { WardrobeItem } from '@/lib/api/types'
 
 type DraftAsset = UploadAssetInput & { previewUri: string }
+
+const categories = ['All', 'Tops', 'Bottoms', 'Outer', 'Accents', 'Shoes']
+
+function toneForCategory(category?: string | null): GarmentTone {
+  const value = category?.toLowerCase() ?? ''
+  if (value.includes('bottom') || value.includes('pant') || value.includes('trouser')) return 'bottom'
+  if (value.includes('shoe') || value.includes('boot')) return 'shoes'
+  if (value.includes('outer') || value.includes('coat') || value.includes('jacket')) return 'outer'
+  if (value.includes('bag')) return 'bag'
+  if (value.includes('access') || value.includes('scarf')) return 'accent'
+  return 'top'
+}
+
+function WardrobeMasonryItem({ item, index }: { item: WardrobeItem; index: number }) {
+  const uri = resolveApiImageUrl(item.thumbnail_url ?? item.processed_image_url ?? item.original_image_url)
+  const height = [220, 260, 238, 184, 204, 230][index % 6]
+
+  return (
+    <View className="mb-4">
+      <GarmentTile imageStyle={{ height }} tone={toneForCategory(item.category)} uri={uri} />
+      <View className="px-0.5 pt-2">
+        <Text preset="h3" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>
+          {item.category ?? 'Processing item'}
+        </Text>
+        <MonoLabel>{item.color_primary ?? item.processing_status}</MonoLabel>
+      </View>
+    </View>
+  )
+}
 
 async function pickAsset(source: 'library' | 'camera') {
   const permission =
@@ -106,95 +132,128 @@ export function WardrobeScreen() {
   }
 
   const items = wardrobeQuery.data?.items ?? []
+  const columns = [items.filter((_, index) => index % 2 === 0), items.filter((_, index) => index % 2 === 1)]
 
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: colors.bgDeep }}>
-      <FlashList
-        contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
-        data={items}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          <View className="mb-6 gap-6">
-            <View>
-              <ScreenHeader
-                heading="Capture once, style daily."
-                label="WARDROBE"
-                subtitle={`${meQuery.data?.full_name ? `${meQuery.data.full_name},` : 'You'} currently have ${items.length} tracked items.`}
-              />
-              <View className="mt-4">
-                <Badge label={`${items.length} ITEMS`} variant="muted" />
-              </View>
-            </View>
+      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 130 }}>
+        <EditorialHeader
+          label="Closet"
+          right={
+            <IconCircle>
+              <Ionicons color={colors.textSecondary} name="search-outline" size={16} />
+            </IconCircle>
+          }
+          subtitle={
+            <>
+              <Text color="accentGold" preset="bodySmall">
+                {items.length} pieces
+              </Text>
+              {' - last added recently'}
+            </>
+          }
+          title="Wardrobe"
+        />
 
-            <View className="flex-row gap-3">
-              <Card className="flex-1 gap-2 p-4" onPress={() => void startDraft('library')} variant="outlined">
-                <Ionicons color={colors.accentGold} name="images-outline" size={22} />
-                <Text preset="h3">Photo Library</Text>
-                <Text color="textSecondary" preset="caption">
-                  Pick from your camera roll
-                </Text>
-              </Card>
-              <Card className="flex-1 gap-2 p-4" onPress={() => void startDraft('camera')} variant="outlined">
-                <Ionicons color={colors.accentMoss} name="camera-outline" size={22} />
-                <Text preset="h3">Camera</Text>
-                <Text color="textSecondary" preset="caption">
-                  Capture right now
-                </Text>
-              </Card>
+        <ScrollView className="-mx-6 mt-5" contentContainerStyle={{ gap: 6, paddingHorizontal: 24 }} horizontal showsHorizontalScrollIndicator={false}>
+          {categories.map((category, index) => (
+            <View
+              key={category}
+              className="rounded-full border px-4 py-2"
+              style={{
+                backgroundColor: index === 0 ? colors.textPrimary : 'transparent',
+                borderColor: index === 0 ? colors.textPrimary : colors.borderSubtle,
+              }}
+            >
+              <Text preset="label" style={{ color: index === 0 ? colors.bgDeep : colors.textSecondary }}>
+                {category}
+              </Text>
             </View>
+          ))}
+        </ScrollView>
 
-            {draftAsset ? (
-              <Card className="overflow-hidden p-0" variant="elevated">
-                <Image
-                  contentFit="cover"
-                  source={{ uri: draftAsset.previewUri }}
-                  style={{ width: '100%', height: 280, backgroundColor: colors.bgRaised }}
+        <View className="mt-5 flex-row gap-3">
+          <EditorialCard className="flex-1 border-dashed p-4" onPress={() => void startDraft('camera')} style={{ backgroundColor: colors.glowMoss }}>
+            <View className="mb-3 h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: colors.accentMoss }}>
+              <Ionicons color="#F0EDE6" name="camera-outline" size={16} />
+            </View>
+            <Text preset="h3" style={{ fontFamily: fontFamily.displaySemi }}>
+              Camera
+            </Text>
+            <Text className="mt-1" color="textSecondary" preset="caption">
+              Capture a piece
+            </Text>
+          </EditorialCard>
+          <EditorialCard className="flex-1 border-dashed p-4" onPress={() => void startDraft('library')}>
+            <View className="mb-3 h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: colors.bgRaised }}>
+              <Ionicons color={colors.accentGold} name="images-outline" size={16} />
+            </View>
+            <Text preset="h3" style={{ fontFamily: fontFamily.displaySemi }}>
+              Library
+            </Text>
+            <Text className="mt-1" color="textSecondary" preset="caption">
+              From photos
+            </Text>
+          </EditorialCard>
+        </View>
+
+        {draftAsset ? (
+          <View className="mt-6 overflow-hidden rounded-3xl border" style={{ borderColor: colors.goldSoft }}>
+            <Image
+              contentFit="cover"
+              source={{ uri: draftAsset.previewUri }}
+              style={{ width: '100%', height: 280, backgroundColor: colors.bgRaised }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(13,18,16,0.88)']}
+              style={{
+                bottom: 0,
+                left: 0,
+                padding: 16,
+                position: 'absolute',
+                right: 0,
+              }}
+            >
+              <MonoLabel color="accentGold">Preview - uploading</MonoLabel>
+              <View className="mt-4 flex-row gap-3">
+                <Button
+                  className="flex-1"
+                  icon={<Ionicons color="#F0EDE6" name="cloud-upload-outline" size={17} />}
+                  isLoading={uploadMutation.isPending}
+                  label="Upload"
+                  onPress={() => uploadMutation.mutate(draftAsset)}
                 />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.65)']}
-                  style={{
-                    bottom: 0,
-                    left: 0,
-                    padding: 16,
-                    position: 'absolute',
-                    right: 0,
-                  }}
-                >
-                  <View className="flex-row gap-3">
-                    <Button
-                      className="flex-1"
-                      icon={<Ionicons color={colors.textPrimary} name="cloud-upload-outline" size={17} />}
-                      isLoading={uploadMutation.isPending}
-                      label="Upload"
-                      onPress={() => uploadMutation.mutate(draftAsset)}
-                    />
-                    <Button
-                      className="flex-1"
-                      icon={<Ionicons color={colors.accentGold} name="trash-outline" size={17} />}
-                      label="Discard"
-                      onPress={() => setDraftAsset(null)}
-                      variant="ghost"
-                    />
-                  </View>
-                </LinearGradient>
-              </Card>
-            ) : null}
-
-            {items.length === 0 ? (
-              <EmptyState
-                title="No wardrobe items yet"
-                message="Upload a top, bottom, or accessory to unlock outfit generation."
-              />
-            ) : null}
+                <Button
+                  className="w-28"
+                  icon={<Ionicons color={colors.accentGold} name="trash-outline" size={17} />}
+                  label="Discard"
+                  onPress={() => setDraftAsset(null)}
+                  variant="ghost"
+                />
+              </View>
+            </LinearGradient>
           </View>
-        }
-        renderItem={({ item, index }) => (
-          <AnimatedListItem index={index}>
-            <WardrobeItemCard item={item} />
-          </AnimatedListItem>
+        ) : null}
+
+        {items.length === 0 ? (
+          <View className="mt-6">
+            <EmptyState
+              title="No wardrobe items yet"
+              message="Upload a top, bottom, or accessory to unlock outfit generation."
+            />
+          </View>
+        ) : (
+          <View className="mt-6 flex-row gap-3">
+            {columns.map((column, columnIndex) => (
+              <View key={columnIndex} className="flex-1">
+                {column.map((item, index) => (
+                  <WardrobeMasonryItem key={item.id} item={item} index={index + columnIndex} />
+                ))}
+              </View>
+            ))}
+          </View>
         )}
-        ItemSeparatorComponent={() => <View className="h-4" />}
-      />
+      </ScrollView>
     </SafeAreaView>
   )
 }

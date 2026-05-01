@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native'
-import { Text } from 'react-native'
-
 import { LoginScreen } from '@/features/auth/login-screen'
 import { TestProviders } from '@/test/test-providers'
 
 jest.mock('expo-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <Text>{children}</Text>,
+  Link: ({ children }: { children: React.ReactNode }) => {
+    const { Text } = require('react-native')
+    return <Text>{children}</Text>
+  },
   router: { replace: jest.fn() },
 }))
 

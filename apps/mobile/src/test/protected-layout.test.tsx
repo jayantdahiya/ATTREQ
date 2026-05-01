@@ -1,8 +1,17 @@
-import { renderRouter, screen } from 'expo-router/testing-library'
-import { Text } from 'react-native'
-
+import { render, screen } from '@testing-library/react-native'
 import ProtectedLayout from '../../app/(protected)/_layout'
 import { useAuthStore } from '@/store/auth-store'
+
+jest.mock('expo-router', () => ({
+  Redirect: ({ href }: { href: string }) => {
+    const { Text } = require('react-native')
+    return <Text>Redirect {href}</Text>
+  },
+  Stack: () => {
+    const { Text } = require('react-native')
+    return <Text>Authed home</Text>
+  },
+}))
 
 jest.mock('@/store/auth-store', () => ({
   useAuthStore: jest.fn(),
@@ -16,18 +25,9 @@ describe('ProtectedLayout', () => {
       selector({ accessToken: null })
     )
 
-    renderRouter(
-      {
-        '(protected)/_layout': ProtectedLayout,
-        '(protected)/(tabs)/index': () => <Text>Authed home</Text>,
-        '(auth)/login': () => <Text>Login screen</Text>,
-      },
-      {
-        initialUrl: '/(protected)/(tabs)',
-      }
-    )
+    render(<ProtectedLayout />)
 
-    expect(screen.getByText('Login screen')).toBeOnTheScreen()
+    expect(screen.getByText('Redirect /(auth)/login')).toBeOnTheScreen()
   })
 
   it('renders protected content when an access token exists', () => {
@@ -35,16 +35,7 @@ describe('ProtectedLayout', () => {
       selector({ accessToken: 'token' })
     )
 
-    renderRouter(
-      {
-        '(protected)/_layout': ProtectedLayout,
-        '(protected)/(tabs)/index': () => <Text>Authed home</Text>,
-        '(auth)/login': () => <Text>Login screen</Text>,
-      },
-      {
-        initialUrl: '/(protected)/(tabs)',
-      }
-    )
+    render(<ProtectedLayout />)
 
     expect(screen.getByText('Authed home')).toBeOnTheScreen()
   })

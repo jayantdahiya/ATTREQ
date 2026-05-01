@@ -72,9 +72,10 @@ class Settings(BaseSettings):
     weaviate_scheme: str = Field(default="http", alias="WEAVIATE_SCHEME")
 
     # External API settings
-    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
-    gemini_model_name: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL_NAME")
-    gemini_batch_size: int = Field(default=5, alias="GEMINI_BATCH_SIZE")
+    groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_model_name: str = Field(
+        default="meta-llama/llama-4-scout-17b-16e-instruct", alias="GROQ_MODEL_NAME"
+    )
     openweather_api_key: str | None = Field(default=None, alias="OPENWEATHER_API_KEY")
 
     # File upload settings

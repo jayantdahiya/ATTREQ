@@ -1,20 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, router } from 'expo-router'
 import { useMutation } from '@tanstack/react-query'
+import { LinearGradient } from 'expo-linear-gradient'
 import { Controller, useForm } from 'react-hook-form'
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import { z } from 'zod'
 
-import { Divider } from '@/components/ui/divider'
-import { ScreenHeader } from '@/components/common/screen-header'
+import { EditorialCard, MonoLabel } from '@/components/attreq/editorial'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Text } from '@/components/ui/text'
 import { authApi } from '@/lib/api/auth'
 import { useAuthStore } from '@/store/auth-store'
 import { useThemeColors } from '@/theme/colors'
+import { fontFamily } from '@/theme/typography'
 
 const loginSchema = z.object({
   username: z.string().email('Enter a valid email address'),
@@ -56,23 +56,32 @@ export function LoginScreen() {
       className="flex-1"
       style={{ backgroundColor: colors.bgDeep }}
     >
+      <LinearGradient
+        colors={[colors.bgSurface, colors.bgDeep]}
+        locations={[0, 0.55]}
+        pointerEvents="none"
+        style={{ height: 390, left: 0, opacity: 0.72, position: 'absolute', right: 0, top: 0 }}
+      />
       <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 justify-between px-6 pb-10 pt-16">
-          <View>
-            <Text color="accentGold" preset="display">
+        <View className="flex-1 justify-between px-7 pb-10 pt-16">
+          <View className="items-center pt-12">
+            <MonoLabel>est. 2026 - personal styling</MonoLabel>
+            <Text className="mt-5 text-center" color="accentGold" preset="wordmark">
               ATTREQ
             </Text>
-            <View className="mt-5">
-              <ScreenHeader
-                heading="Your closet, curated."
-                label="WELCOME BACK"
-                subtitle="Sign in to restore your wardrobe and continue your daily styling loop."
-              />
-            </View>
+            <Text className="mt-3 text-center" color="textSecondary" preset="h2" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>
+              Your closet, curated.
+            </Text>
           </View>
 
           <Animated.View entering={FadeInDown.delay(220).duration(600)}>
-            <Card className="mt-10 gap-5" variant="premium">
+            <EditorialCard accent="gold" className="gap-5 px-6 py-7">
+              <View>
+                <Text preset="h2">Welcome back</Text>
+                <Text className="mt-1" color="textSecondary" preset="bodySmall">
+                  Sign in to your wardrobe.
+                </Text>
+              </View>
               <Controller
                 control={control}
                 name="username"
@@ -110,18 +119,20 @@ export function LoginScreen() {
                 onPress={handleSubmit((values) => loginMutation.mutate(values))}
               />
 
-              <Divider variant="subtle" />
-
-              <Text className="text-center" color="textSecondary" preset="bodySmall">
-                Need an account?{' '}
-                <Link href="/(auth)/register">
-                  <Text color="accentGold" preset="bodySmall" style={{ fontFamily: 'DMSans_600SemiBold' }}>
-                    Create one
-                  </Text>
-                </Link>
+              <Text className="text-center" color="textTertiary" preset="label">
+                Forgot password
               </Text>
-            </Card>
+            </EditorialCard>
           </Animated.View>
+
+          <Text className="text-center" color="textSecondary" preset="bodySmall">
+            New here?{' '}
+            <Link href="/(auth)/register">
+              <Text color="accentGold" preset="bodySmall" style={{ fontFamily: fontFamily.bodySemi }}>
+                Create account
+              </Text>
+            </Link>
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -9,7 +9,7 @@ from PIL import Image
 from sklearn.cluster import KMeans
 
 from attreq_api.config.settings import settings
-from attreq_api.services.ai.gemini_classifier import gemini_classifier_service
+from attreq_api.services.ai.groq_classifier import groq_classifier_service
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +61,20 @@ class ClothingDetectionService:
         if not Path(image_path).exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
 
-        # Check if Gemini API key is configured
-        if not settings.gemini_api_key:
-            logger.warning("Gemini API key not configured. Using fallback color detection only.")
-            return await self._fallback_detection(image_path)
+        # Check if Groq API key is configured
+        if not settings.groq_api_key:
+            logger.warning("Groq API key not configured. Using fallback color detection only.")
+            result = await self._fallback_detection(image_path)
+            result["classification_source"] = "fallback"
+            return result
 
         try:
-            logger.info("Using Gemini API for clothing detection")
-            return await gemini_classifier_service.classify_single_image(image_path)
+            logger.info("Using Groq API for clothing detection")
+            result = await groq_classifier_service.classify_single_image(image_path)
+            result["classification_source"] = "ai"
+            return result
         except Exception as e:
-            logger.error(f"Gemini API failed: {str(e)}")
-            # Fall back to color-only detection
+            logger.error(f"Groq API failed: {str(e)}")
             return await self._fallback_detection(image_path)
 
     async def _fallback_detection(self, image_path: str) -> dict[str, Any]:
@@ -88,13 +91,14 @@ class ClothingDetectionService:
             pattern = self._detect_pattern(image_path)
 
             return {
-                "category": None,  # Cannot detect without Gemini API
+                "category": None,
                 "color_primary": color_primary,
                 "color_secondary": color_secondary,
                 "pattern": pattern,
                 "season": [],
                 "occasion": [],
                 "detection_confidence": 0.0,
+                "classification_source": "fallback",
                 "processing_status": "completed",
             }
         except Exception as e:
@@ -107,6 +111,7 @@ class ClothingDetectionService:
                 "season": [],
                 "occasion": [],
                 "detection_confidence": 0.0,
+                "classification_source": "fallback",
                 "processing_status": "failed",
             }
 

@@ -38,6 +38,7 @@ class WardrobeItem(Base):
 
     # AI processing metadata
     detection_confidence = Column(Float, nullable=True)
+    classification_source = Column(String(20), nullable=True)  # "ai" | "fallback"
     processing_status = Column(
         String(20), nullable=False, default="pending", index=True
     )  # pending, processing, completed, failed

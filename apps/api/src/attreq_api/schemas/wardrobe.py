@@ -47,6 +47,7 @@ class WardrobeItemResponse(WardrobeItemBase):
     processed_image_url: str | None = None
     thumbnail_url: str | None = None
     detection_confidence: float | None = None
+    classification_source: str | None = None
     processing_status: str
     wear_count: int
     last_worn: date | None = None

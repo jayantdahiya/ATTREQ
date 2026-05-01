@@ -126,6 +126,7 @@ async def process_wardrobe_image(item_id: UUID, user_id: UUID, original_image_pa
                 "season": detection_result.get("season", []),
                 "occasion": detection_result.get("occasion", []),
                 "detection_confidence": detection_result.get("detection_confidence", 0.0),
+                "classification_source": detection_result.get("classification_source"),
                 "processing_status": "completed",
             }
 

@@ -28,21 +28,27 @@ export const fontFamily = {
 export const typeScale = {
   display: {
     fontFamily: fontFamily.displayBold,
-    fontSize: 32,
-    lineHeight: 38,
-    letterSpacing: -0.5,
+    fontSize: 38,
+    lineHeight: 42,
+    letterSpacing: 0,
+  },
+  wordmark: {
+    fontFamily: fontFamily.displaySemi,
+    fontSize: 56,
+    lineHeight: 58,
+    letterSpacing: 4.5,
   },
   h1: {
     fontFamily: fontFamily.displaySemi,
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: -0.3,
+    fontSize: 36,
+    lineHeight: 38,
+    letterSpacing: 0,
   },
   h2: {
     fontFamily: fontFamily.displaySemi,
     fontSize: 22,
     lineHeight: 28,
-    letterSpacing: -0.2,
+    letterSpacing: 0,
   },
   h3: {
     fontFamily: fontFamily.bodySemi,
@@ -54,13 +60,13 @@ export const typeScale = {
     fontFamily: fontFamily.bodyRegular,
     fontSize: 16,
     lineHeight: 24,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
   },
   bodySmall: {
     fontFamily: fontFamily.bodyRegular,
     fontSize: 14,
     lineHeight: 20,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
   },
   caption: {
     fontFamily: fontFamily.bodyMedium,
@@ -70,9 +76,9 @@ export const typeScale = {
   },
   label: {
     fontFamily: fontFamily.monoMedium,
-    fontSize: 11,
+    fontSize: 10,
     lineHeight: 14,
-    letterSpacing: 1.5,
+    letterSpacing: 1.8,
     textTransform: 'uppercase' as const,
   },
   mono: {

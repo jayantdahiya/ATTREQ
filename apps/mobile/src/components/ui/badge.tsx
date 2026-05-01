@@ -2,7 +2,7 @@ import { View, type ViewProps } from 'react-native'
 
 import { cn } from '@/lib/utils/cn'
 import { Text } from '@/components/ui/text'
-import { useThemeColors, type ThemeColors } from '@/theme/colors'
+import { useThemeColors } from '@/theme/colors'
 
 type BadgeVariant = 'moss' | 'gold' | 'muted' | 'clay'
 
@@ -11,24 +11,22 @@ interface BadgeProps extends ViewProps {
   variant?: BadgeVariant
 }
 
-const styles: Record<BadgeVariant, { bg: keyof ThemeColors; text: 'textPrimary' | 'textSecondary' }> = {
-  moss: { bg: 'accentMoss', text: 'textPrimary' },
-  gold: { bg: 'accentGold', text: 'textPrimary' },
-  muted: { bg: 'bgRaised', text: 'textSecondary' },
-  clay: { bg: 'accentClay', text: 'textPrimary' },
-}
-
 export function Badge({ className, label, variant = 'muted', ...props }: BadgeProps) {
   const { colors } = useThemeColors()
-  const palette = styles[variant]
+  const palette = {
+    moss: { bg: colors.mossSoft, fg: colors.accentOlive, border: 'transparent' },
+    gold: { bg: colors.goldSoft, fg: colors.accentGold, border: 'transparent' },
+    muted: { bg: 'transparent', fg: colors.textTertiary, border: colors.borderSubtle },
+    clay: { bg: 'transparent', fg: colors.accentClay, border: colors.accentClay },
+  }[variant]
 
   return (
     <View
-      className={cn('rounded-full px-3 py-1.5', className)}
-      style={{ backgroundColor: colors[palette.bg] }}
+      className={cn('rounded-full border px-3 py-1.5', className)}
+      style={{ backgroundColor: palette.bg, borderColor: palette.border }}
       {...props}
     >
-      <Text preset="label" color={palette.text}>
+      <Text preset="label" style={{ color: palette.fg }}>
         {label}
       </Text>
     </View>

@@ -20,18 +20,18 @@ export function EmptyState({
     <Animated.View
       entering={FadeIn.duration(380)}
       style={{
-        borderColor: colors.accentGold,
+        borderColor: colors.borderSoft,
         backgroundColor: colors.bgSurface,
         borderRadius: 24,
         borderStyle: 'dashed',
         borderWidth: 1,
-        paddingHorizontal: 20,
-        paddingVertical: 26,
+        paddingHorizontal: 22,
+        paddingVertical: 30,
       }}
     >
       <Animated.View entering={ZoomIn.duration(380)}>
         {icon ? <View className="mb-3">{icon}</View> : null}
-        <Text preset="h2">{title}</Text>
+        <Text className="text-center" preset="h2">{title}</Text>
         <Text className="mt-2" color="textSecondary" preset="bodySmall">
           {message}
         </Text>

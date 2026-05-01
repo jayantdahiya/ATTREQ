@@ -5,12 +5,10 @@ import { useState } from 'react'
 import { Alert, RefreshControl, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
+import { AppSurface, EditorialCard, EditorialHeader, IconCircle, MonoLabel, WeatherStrip, fontFamily } from '@/components/attreq/editorial'
 import { EmptyState } from '@/components/common/empty-state'
 import { LoadingScreen } from '@/components/common/loading-screen'
-import { ScreenHeader } from '@/components/common/screen-header'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Text } from '@/components/ui/text'
 import { outfitsApi } from '@/lib/api/outfits'
 import { recommendationsApi } from '@/lib/api/recommendations'
@@ -22,6 +20,54 @@ import { useThemeColors } from '@/theme/colors'
 
 function formatRecommendationKey(topItemId: string, bottomItemId: string) {
   return `${topItemId}:${bottomItemId}`
+}
+
+function LocationPermissionState({
+  isLoading,
+  onAllow,
+}: {
+  isLoading: boolean
+  onAllow: () => void
+}) {
+  const { colors } = useThemeColors()
+
+  return (
+    <AppSurface scroll={false} contentClassName="flex-1 px-7">
+      <View className="pt-4">
+        <MonoLabel>Step 02</MonoLabel>
+      </View>
+      <View className="flex-1 items-center justify-center pb-20">
+        <View className="h-44 w-44 items-center justify-center rounded-full border" style={{ borderColor: colors.borderSoft, backgroundColor: colors.glowMoss }}>
+          <View className="h-28 w-28 items-center justify-center rounded-full border border-dashed" style={{ borderColor: colors.mossSoft }}>
+            <View className="h-16 w-16 items-center justify-center rounded-full" style={{ backgroundColor: colors.accentMoss }}>
+              <Ionicons color="#F0EDE6" name="location-outline" size={28} />
+            </View>
+          </View>
+        </View>
+        <Text className="mt-12 text-center" preset="display">
+          The weather decides{'\n'}
+          <Text color="accentGold" preset="display" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>
+            before you do.
+          </Text>
+        </Text>
+        <Text className="mt-4 max-w-[300px] text-center" color="textSecondary" preset="bodySmall">
+          Share your location and we&apos;ll pair tomorrow&apos;s looks to tomorrow&apos;s sky.
+        </Text>
+      </View>
+      <View className="pb-10">
+        <Button
+          icon={<Ionicons color="#1A1410" name="location-outline" size={17} />}
+          isLoading={isLoading}
+          label="Allow location access"
+          onPress={onAllow}
+          variant="premium"
+        />
+        <Text className="mt-4 text-center" color="textTertiary" preset="label">
+          Maybe later
+        </Text>
+      </View>
+    </AppSurface>
+  )
 }
 
 export function DashboardScreen() {
@@ -164,63 +210,59 @@ export function DashboardScreen() {
   }
 
   if (!hasSavedLocation && !currentCoords) {
-    return (
-      <SafeAreaView className="flex-1" style={{ backgroundColor: colors.bgDeep }}>
-        <ScrollView contentContainerStyle={{ padding: 24 }}>
-          <ScreenHeader
-            heading="Weather-aware recommendations need a location first."
-            label="TODAY"
-            subtitle="ATTREQ can use your current coordinates and store them on your profile for future refreshes."
-          />
-
-          <Card className="mt-8 gap-4" variant="premium">
-            <Text preset="h3">Set your location</Text>
-            <Text color="textSecondary" preset="bodySmall">
-              This v1 client uses device coordinates and the backend&apos;s saved-location fallback. Manual city geocoding is intentionally deferred.
-            </Text>
-            <Button
-              icon={<Ionicons color={colors.textPrimary} name="location-outline" size={17} />}
-              isLoading={locationMutation.isPending}
-              label="Use current location"
-              onPress={() => locationMutation.mutate()}
-            />
-          </Card>
-        </ScrollView>
-      </SafeAreaView>
-    )
+    return <LocationPermissionState isLoading={locationMutation.isPending} onAllow={() => locationMutation.mutate()} />
   }
 
   const suggestions = recommendationsQuery.data?.suggestions ?? []
+  const userName = currentUserQuery.data?.full_name?.split(' ')[0] ?? 'there'
+  const city = currentUserQuery.data?.saved_city ?? (isUsingDeviceLocation ? 'Current location' : 'Saved location')
 
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: colors.bgDeep }}>
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
+        contentContainerStyle={{ padding: 24, paddingBottom: 130 }}
         refreshControl={
           <RefreshControl
             refreshing={recommendationsQuery.isRefetching}
             tintColor={colors.accentGold}
+            title="Weaving today's looks..."
+            titleColor={colors.accentGold}
             onRefresh={() => recommendationsQuery.refetch()}
           />
         }
       >
-        <ScreenHeader
-          heading={isUsingDeviceLocation ? 'Fresh from your current weather.' : 'Built from your saved location.'}
-          label="TODAY"
-          subtitle={recommendationsQuery.data?.weather.description ?? 'Pulling the latest conditions for your wardrobe.'}
+        <EditorialHeader
+          label={new Intl.DateTimeFormat('en', { weekday: 'long', month: '2-digit', day: '2-digit' }).format(new Date())}
+          right={
+            <IconCircle onPress={() => recommendationsQuery.refetch()}>
+              <Ionicons color={colors.textSecondary} name="reorder-three-outline" size={18} />
+            </IconCircle>
+          }
+          title={
+            <>
+              Good morning,{'\n'}
+              <Text color="accentGold" preset="h1" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>
+                {userName}.
+              </Text>
+            </>
+          }
         />
 
-        <View className="mt-5 flex-row flex-wrap gap-2">
-          {recommendationsQuery.data?.weather?.temp != null ? (
-            <Badge label={`${Math.round(recommendationsQuery.data.weather.temp)} C`} variant="moss" />
-          ) : null}
-          {recommendationsQuery.data?.weather?.condition ? (
-            <Badge label={recommendationsQuery.data.weather.condition} variant="gold" />
-          ) : null}
+        <WeatherStrip
+          city={city}
+          condition={recommendationsQuery.data?.weather.description}
+          temp={recommendationsQuery.data?.weather.temp}
+        />
+
+        <View className="mt-6 flex-row items-center justify-between">
+          <Text preset="h2" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>
+            Today&apos;s looks
+          </Text>
+          <MonoLabel>{suggestions.length} looks</MonoLabel>
         </View>
 
-        <View className="mt-6 flex-row gap-3">
+        <View className="mt-4 flex-row gap-3">
           <Button
             icon={<Ionicons color={colors.textPrimary} name="refresh-outline" size={17} />}
             label="Refresh"
@@ -245,8 +287,15 @@ export function DashboardScreen() {
         {!recommendationsQuery.isLoading && suggestions.length === 0 ? (
           <View className="mt-8">
             <EmptyState
-              title="No suggestions yet"
-              message="Add a few more wardrobe items so ATTREQ can build complete outfits."
+              title="An empty closet, a quiet morning."
+              message="Add a few favorites and we will start composing looks. Five pieces is enough to begin."
+              icon={
+                <View className="items-center gap-1 opacity-60">
+                  {[0, 1, 2].map((i) => (
+                    <View key={i} style={{ backgroundColor: colors.bgRaised, borderRadius: 4, height: 14, width: 118 - i * 12 }} />
+                  ))}
+                </View>
+              }
             />
           </View>
         ) : null}
@@ -268,6 +317,15 @@ export function DashboardScreen() {
             )
           })}
         </View>
+
+        {suggestions.length > 0 ? (
+          <EditorialCard accent="gold" className="mt-5">
+            <MonoLabel color="accentGold">Motion note</MonoLabel>
+            <Text className="mt-2" color="textSecondary" preset="bodySmall">
+              Pull down to weave new looks from weather, wardrobe, and recent feedback.
+            </Text>
+          </EditorialCard>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   )

@@ -23,10 +23,10 @@ export function Card({ children, className, onPress, variant = 'default', ...pro
   }))
 
   const surfaceStyle: Record<CardVariant, { bg: string; border: string; topAccent?: string; shadow: string }> = {
-    default: { bg: colors.bgSurface, border: colors.borderSubtle, shadow: colors.glowMoss },
-    elevated: { bg: colors.bgRaised, border: colors.borderSubtle, shadow: colors.glowMoss },
+    default: { bg: colors.bgSurface, border: colors.borderSoft, shadow: colors.glowMoss },
+    elevated: { bg: colors.bgSurface, border: colors.borderSoft, shadow: colors.glowMoss },
     outlined: { bg: 'transparent', border: colors.borderSubtle, shadow: 'transparent' },
-    premium: { bg: colors.bgSurface, border: colors.borderSubtle, topAccent: colors.accentGold, shadow: colors.glowGold },
+    premium: { bg: colors.bgSurface, border: colors.borderSoft, topAccent: colors.accentGold, shadow: colors.glowGold },
   }
 
   const content = (

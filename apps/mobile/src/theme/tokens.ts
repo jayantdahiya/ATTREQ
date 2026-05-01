@@ -15,6 +15,7 @@ export const theme = {
     '3xl': 32,
   },
   radius: {
+    xs: 8,
     sm: 12,
     md: 16,
     lg: 20,

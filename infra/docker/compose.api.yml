@@ -122,9 +122,8 @@ services:
       WEAVIATE_SCHEME: http
       
       # External APIs
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.0-flash}
-      GEMINI_BATCH_SIZE: ${GEMINI_BATCH_SIZE:-5}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL_NAME: ${GROQ_MODEL_NAME:-meta-llama/llama-4-scout-17b-16e-instruct}
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
       
       # File Upload Settings
@@ -135,6 +134,7 @@ services:
     volumes:
       - ../../apps/api:/app
       - ../../apps/api/uploads:/app/uploads
+      - rembg_cache:/root/.u2net
     networks:
       - attreq_network
     depends_on:
@@ -162,6 +162,8 @@ volumes:
   postgres_data:
     driver: local
   weaviate_data:
+    driver: local
+  rembg_cache:
     driver: local
 
 networks:

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ATTREQ — Editorial Utility</title>
+<meta name="viewport" content="width=1400"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; font-family: "DM Sans", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="tokens.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="screens-auth.jsx"></script>
+<script type="text/babel" src="screens-today.jsx"></script>
+<script type="text/babel" src="screens-rest.jsx"></script>
+<script type="text/babel" src="screens-extras.jsx"></script>
+<script type="text/babel" src="system-sheet.jsx"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "mode": "dark",
+  "accent": "gold",
+  "tabBar": "floating",
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+
+// Wrap any artboard's screen in an iOS device frame
+function Framed({ children, dark = true }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <IOSDevice width={SCREEN_W} height={SCREEN_H} dark={dark}>
+        {children}
+      </IOSDevice>
+    </div>
+  );
+}
+
+function App() {
+  const [tweaks, setTweaks] = useTweaks(TWEAK_DEFAULTS);
+
+  // Apply accent override
+  const buildTokens = (mode) => {
+    const base = { ...ATTREQ_TOKENS[mode] };
+    if (tweaks.accent === 'olive') { base.gold = base.olive; base.goldSoft = base.mossSoft; base.goldGlow = base.mossGlow; }
+    if (tweaks.accent === 'clay') { base.gold = base.clay; }
+    return base;
+  };
+  const tDark = buildTokens('dark');
+  const tLight = buildTokens('light');
+
+  // Single-mode rendering helper
+  const Pair = ({ children, idPrefix, label }) => (
+    <>
+      <DCArtboard id={idPrefix + '-d'} label={label + ' · dark'} width={SCREEN_W + 40} height={SCREEN_H + 40}>
+        <Framed dark={true}>{children(tDark)}</Framed>
+      </DCArtboard>
+      <DCArtboard id={idPrefix + '-l'} label={label + ' · light'} width={SCREEN_W + 40} height={SCREEN_H + 40}>
+        <Framed dark={false}>{children(tLight)}</Framed>
+      </DCArtboard>
+    </>
+  );
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="overview" title="ATTREQ — Editorial Utility" subtitle="Personal styling app · iPhone 15 Pro · Dark primary, light pair">
+        </DCSection>
+
+        <DCSection id="auth" title="01 · Auth flow" subtitle="Login + Registration · atmospheric serif wordmark over moss/gold gradient">
+          <DCArtboard id="login-d" label="Login · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqLogin t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="login-l" label="Login · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqLogin t={tLight}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="reg-d" label="Register · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqRegister t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="reg-l" label="Register · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqRegister t={tLight}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="today" title="02 · Today (Dashboard) — hero" subtitle="3 layout variations of the outfit suggestion card. Variation A is recommended.">
+          <DCArtboard id="today-a-d" label="A · Editorial collage · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqToday t={tDark} variant="A"/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-a-l" label="A · Editorial collage · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqToday t={tLight} variant="A"/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-b-d" label="B · Stack + accent inset · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqToday t={tDark} variant="B"/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-c-d" label="C · Magazine spread · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqToday t={tDark} variant="C"/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-empty-d" label="Empty state · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqTodayEmpty t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-loading-d" label="Loading · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqLoading t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-pull-d" label="Pull-to-refresh · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqPullRefresh t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="today-celebrate-d" label="First look · celebrate" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqCelebrate t={tDark}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="wardrobe" title="03 · Wardrobe" subtitle="2 grid variations + upload preview state">
+          <DCArtboard id="wardrobe-a-d" label="A · Masonry · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqWardrobe t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="wardrobe-a-l" label="A · Masonry · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqWardrobe t={tLight}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="wardrobe-b-d" label="B · Tight grid + upload · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqWardrobeGrid t={tDark}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="history" title="04 · History" subtitle="Timeline of worn looks · score pills">
+          <DCArtboard id="history-d" label="History · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqHistory t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="history-l" label="History · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqHistory t={tLight}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="profile" title="05 · Profile" subtitle="Identity card + preferences · sign-out as quiet text">
+          <DCArtboard id="profile-d" label="Profile · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqProfile t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="profile-l" label="Profile · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqProfile t={tLight}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="permission" title="06 · Location permission (first-run)" subtitle="Conversion-critical · single CTA · why before ask">
+          <DCArtboard id="perm-d" label="Allow location · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><AttreqLocation t={tDark}/></Framed>
+          </DCArtboard>
+          <DCArtboard id="perm-l" label="Allow location · light" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={false}><AttreqLocation t={tLight}/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="tabbar" title="07 · Tab bar variations" subtitle="Floating moss-dot pill (recommended) vs edge-to-edge">
+          <DCArtboard id="tab-float-d" label="Floating · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><TabBarVariantArtboard t={tDark} variant="floating"/></Framed>
+          </DCArtboard>
+          <DCArtboard id="tab-edge-d" label="Edge-to-edge · dark" width={SCREEN_W + 40} height={SCREEN_H + 40}>
+            <Framed dark={true}><TabBarVariantArtboard t={tDark} variant="edge"/></Framed>
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="system" title="08 · Design system" subtitle="Type scale · palette · components · motion">
+          <DCArtboard id="sys-d" label="System · dark" width={520} height={920}>
+            <AttreqSystemSheet t={tDark} mode="dark"/>
+          </DCArtboard>
+          <DCArtboard id="sys-l" label="System · light" width={520} height={920}>
+            <AttreqSystemSheet t={tLight} mode="light"/>
+          </DCArtboard>
+        </DCSection>
+
+        <DCPostIt top={120} left={20} rotate={-3} width={220}>
+          Toggle <b>Tweaks</b> in the toolbar →<br/>
+          accent hue, density, tab bar style.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Accent hue">
+          <TweakRadio
+            value={tweaks.accent}
+            options={[
+              { label: 'Gold (default)', value: 'gold' },
+              { label: 'Olive — quieter', value: 'olive' },
+              { label: 'Clay — warmer', value: 'clay' },
+            ]}
+            onChange={(v) => setTweaks({ accent: v })}
+          />
+        </TweakSection>
+        <TweakSection title="Tab bar">
+          <TweakRadio
+            value={tweaks.tabBar}
+            options={[
+              { label: 'Floating pill', value: 'floating' },
+              { label: 'Edge-to-edge', value: 'edge' },
+            ]}
+            onChange={(v) => setTweaks({ tabBar: v })}
+          />
+        </TweakSection>
+        <TweakSection title="Density">
+          <TweakRadio
+            value={tweaks.density}
+            options={[
+              { label: 'Comfortable', value: 'comfortable' },
+              { label: 'Compact', value: 'compact' },
+            ]}
+            onChange={(v) => setTweaks({ density: v })}
+          />
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+
+</body>
+</html>

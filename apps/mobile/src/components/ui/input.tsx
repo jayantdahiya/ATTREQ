@@ -20,7 +20,7 @@ export function Input({ className, error, label, onBlur, onFocus, ...props }: In
         {label}
       </Text>
       <TextInput
-        className={cn('min-h-12 rounded-2xl border px-4 py-3', className)}
+        className={cn('min-h-11 border-b px-0 py-2', className)}
         onBlur={(event) => {
           setFocused(false)
           onBlur?.(event)
@@ -31,9 +31,11 @@ export function Input({ className, error, label, onBlur, onFocus, ...props }: In
         }}
         placeholderTextColor={colors.textTertiary}
         style={{
-          backgroundColor: colors.bgSurface,
+          backgroundColor: 'transparent',
           borderColor: error ? colors.accentClay : focused ? colors.accentMoss : colors.borderSubtle,
           color: colors.textPrimary,
+          fontFamily: 'DMSans_400Regular',
+          fontSize: 16,
           shadowColor: focused ? colors.accentMoss : 'transparent',
           shadowOpacity: focused ? 0.18 : 0,
           shadowRadius: 10,
