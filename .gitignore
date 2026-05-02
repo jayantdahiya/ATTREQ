@@ -49,3 +49,5 @@ logs/
 # Legacy / archived local folders
 LLM/
 web-build/
+
+scripts/data/test_images
