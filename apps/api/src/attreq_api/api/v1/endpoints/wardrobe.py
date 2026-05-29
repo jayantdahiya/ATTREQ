@@ -421,3 +421,53 @@ async def delete_wardrobe_item(
     logger.info(f"Wardrobe item {item_id} deleted by user {current_user.id}")
 
     return
+
+
+@router.post(
+    "/items/bulk",
+    response_model=list[WardrobeItemResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def bulk_add_wardrobe_items(
+    items_data: list[dict],
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Bulk-insert wardrobe items detected from Style DNA photos or camera roll.
+
+    Accepts a list of detected item dicts (from StyleDnaUploadResponse).
+    Items are created with classification_source matching the caller's context.
+    """
+    from attreq_api.models.wardrobe import WardrobeItem
+
+    if not items_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No items provided")
+
+    if len(items_data) > 50:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 50 items per bulk request")
+
+    created = []
+    for data in items_data:
+        category = data.get("subcategory") or data.get("category", "top")
+        item = WardrobeItem(
+            user_id=current_user.id,
+            original_image_url=data.get("original_image_url", "/uploads/style-dna/placeholder.jpg"),
+            category=category,
+            color_primary=data.get("color_primary"),
+            color_secondary=data.get("color_secondary"),
+            pattern=data.get("pattern"),
+            season=data.get("season", ["all"]),
+            occasion=data.get("occasion", ["casual"]),
+            detection_confidence=data.get("confidence", 0.7),
+            classification_source=data.get("classification_source", "style_dna_seed"),
+            processing_status="completed",
+        )
+        db.add(item)
+        created.append(item)
+
+    await db.commit()
+    for item in created:
+        await db.refresh(item)
+
+    logger.info(f"Bulk added {len(created)} wardrobe items for user {current_user.id}")
+    return [WardrobeItemResponse.model_validate(item) for item in created]

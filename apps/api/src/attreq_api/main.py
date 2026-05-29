@@ -3,6 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -13,6 +14,9 @@ from attreq_api.config.database import close_db, init_db
 from attreq_api.config.settings import settings
 from attreq_api.services.ai.embeddings import weaviate_service
 from attreq_api.services.cache.redis_client import redis_cache
+
+if settings.sentry_dsn:
+    sentry_sdk.init(dsn=settings.sentry_dsn, traces_sample_rate=0.2)
 
 
 @asynccontextmanager

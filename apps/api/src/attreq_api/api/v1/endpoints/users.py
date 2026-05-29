@@ -160,3 +160,22 @@ async def deactivate_account(
     await user_crud.deactivate_user(db, current_user)
 
     return {"message": "Account deactivated successfully"}
+
+
+@router.post("/onboarding/complete", response_model=UserResponse)
+async def complete_onboarding(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Mark onboarding as complete. Called after user confirms Style DNA + wardrobe review."""
+    from attreq_api.models.user import User
+
+    await db.execute(
+        update(User)
+        .where(User.id == current_user.id)
+        .values(onboarding_completed=True, onboarding_step="complete")
+    )
+    await db.commit()
+    await db.refresh(current_user)
+
+    return UserResponse.model_validate(current_user)

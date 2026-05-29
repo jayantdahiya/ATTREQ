@@ -1,5 +1,6 @@
 """Recommendation algorithm for outfit generation."""
 
+import json
 import logging
 import random
 from datetime import date, timedelta
@@ -10,8 +11,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from attreq_api.models.outfit import Outfit
+from attreq_api.models.user import User
 from attreq_api.models.wardrobe import WardrobeItem
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.style_dna.scoring import calculate_behaviour_score, calculate_style_dna_score
 
 logger = logging.getLogger(__name__)
 
@@ -515,6 +518,16 @@ async def generate_daily_outfits(
     # Step 5: Get user preferences
     user_preferences = await get_user_preference_weights(db, user_id)
 
+    # Load Style DNA if available
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user_obj = user_result.scalar_one_or_none()
+    style_dna = None
+    if user_obj and user_obj.style_preferences:
+        try:
+            style_dna = json.loads(user_obj.style_preferences)
+        except (json.JSONDecodeError, TypeError):
+            style_dna = None
+
     # Separate items by category
     tops = [item for item in occasion_filtered if item.category and "top" in item.category.lower()]
     bottoms = [
@@ -572,8 +585,22 @@ async def generate_daily_outfits(
                 ):
                     preference_bonus += 0.1
 
-            # Combined score
-            total_score = (color_score * 0.4) + (formality_score * 0.4) + (preference_bonus * 0.2)
+            # Combined score — Style DNA weighted if profile exists
+            style_dna_score = 0.0
+            behaviour_score = 0.0
+            if style_dna:
+                style_dna_score = calculate_style_dna_score([top, bottom], style_dna)
+                behaviour_score = calculate_behaviour_score(
+                    [top, bottom], style_dna.get("behaviour_weights", {})
+                )
+                total_score = (
+                    color_score * 0.20
+                    + formality_score * 0.20
+                    + style_dna_score * 0.40
+                    + behaviour_score * 0.20
+                )
+            else:
+                total_score = (color_score * 0.4) + (formality_score * 0.4) + (preference_bonus * 0.2)
 
             # Select an accessory if available
             accessory = None
@@ -619,6 +646,8 @@ async def generate_daily_outfits(
                         "color_harmony": round(color_score, 2),
                         "formality": round(formality_score, 2),
                         "preference_bonus": round(preference_bonus, 2),
+                        "style_dna": round(style_dna_score, 2),
+                        "behaviour": round(behaviour_score, 2),
                         "total": round(total_score, 2),
                     },
                     "weather_context": weather,

@@ -1,5 +1,6 @@
 import { apiClient } from '@/lib/api/client'
 import type {
+  DetectedWardrobeItem,
   WardrobeItem,
   WardrobeListResponse,
   WardrobeUploadResponse,
@@ -38,6 +39,17 @@ export const wardrobeApi = {
   },
   async getItem(itemId: string) {
     const response = await apiClient.get<WardrobeItem>(`/wardrobe/items/${itemId}`)
+    return response.data
+  },
+  async updateItem(itemId: string, data: Partial<WardrobeItem>) {
+    const response = await apiClient.put<WardrobeItem>(`/wardrobe/items/${itemId}`, data)
+    return response.data
+  },
+  async deleteItem(itemId: string) {
+    await apiClient.delete(`/wardrobe/items/${itemId}`)
+  },
+  async bulkAddItems(items: DetectedWardrobeItem[]): Promise<WardrobeItem[]> {
+    const response = await apiClient.post<WardrobeItem[]>('/wardrobe/items/bulk', items)
     return response.data
   },
 }

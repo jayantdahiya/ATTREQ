@@ -60,6 +60,8 @@ class UserInDB(UserBase):
     oauth_provider: str | None = None
     oauth_id: str | None = None
     style_preferences: str | None = None
+    onboarding_completed: bool = False
+    onboarding_step: str | None = "pending"
 
     class Config:
         from_attributes = True
@@ -76,6 +78,8 @@ class UserResponse(UserBase):
     last_login: datetime | None = None
     oauth_provider: str | None = None
     style_preferences: str | None = None
+    onboarding_completed: bool = False
+    onboarding_step: str | None = "pending"
 
     class Config:
         from_attributes = True

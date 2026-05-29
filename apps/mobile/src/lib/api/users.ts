@@ -16,4 +16,8 @@ export const usersApi = {
     const response = await apiClient.put<User>('/users/me', payload)
     return response.data
   },
+  async completeOnboarding(): Promise<User> {
+    const response = await apiClient.post<User>('/users/onboarding/complete')
+    return response.data
+  },
 }

@@ -1,0 +1,72 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: attreq_test
+          POSTGRES_USER: attreq_user
+          POSTGRES_PASSWORD: attreq_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://attreq_user:attreq_password@localhost:5432/attreq_test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: attreq_test
+      POSTGRES_USER: attreq_user
+      POSTGRES_PASSWORD: attreq_password
+      SECRET_KEY: ci-secret-key-at-least-32-characters-long
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: apps/api/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r apps/api/requirements.txt
+
+      - name: Lint (ruff)
+        run: |
+          cd apps/api
+          python -m ruff check src tests
+
+      - name: Check Alembic migrations are up to date
+        run: |
+          cd apps/api
+          PYTHONPATH=src python -m alembic upgrade head
+          PYTHONPATH=src python -m alembic check
+
+      - name: Run tests
+        run: |
+          cd apps/api
+          PYTHONPATH=src python -m pytest

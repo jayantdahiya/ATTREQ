@@ -9,7 +9,7 @@ from PIL import Image
 from sklearn.cluster import KMeans
 
 from attreq_api.config.settings import settings
-from attreq_api.services.ai.groq_classifier import groq_classifier_service
+from attreq_api.services.ai.classifier_factory import get_classifier
 
 logger = logging.getLogger(__name__)
 
@@ -61,20 +61,21 @@ class ClothingDetectionService:
         if not Path(image_path).exists():
             raise FileNotFoundError(f"Image not found: {image_path}")
 
-        # Check if Groq API key is configured
-        if not settings.groq_api_key:
-            logger.warning("Groq API key not configured. Using fallback color detection only.")
+        provider = settings.classifier_provider
+        classifier = get_classifier()
+
+        try:
+            logger.info(f"Using {provider} classifier for clothing detection")
+            result = await classifier.classify_single_image(image_path)
+            result["classification_source"] = "ai"
+            return result
+        except ValueError as e:
+            logger.warning(f"{provider} classifier not configured: {str(e)}. Using fallback.")
             result = await self._fallback_detection(image_path)
             result["classification_source"] = "fallback"
             return result
-
-        try:
-            logger.info("Using Groq API for clothing detection")
-            result = await groq_classifier_service.classify_single_image(image_path)
-            result["classification_source"] = "ai"
-            return result
         except Exception as e:
-            logger.error(f"Groq API failed: {str(e)}")
+            logger.error(f"{provider} classifier failed: {str(e)}")
             return await self._fallback_detection(image_path)
 
     async def _fallback_detection(self, image_path: str) -> dict[str, Any]:

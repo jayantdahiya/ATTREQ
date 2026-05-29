@@ -14,4 +14,5 @@ export const queryKeys = {
   wardrobe: ['wardrobe'] as const,
   outfits: ['outfits'] as const,
   recommendations: (paramsKey: string) => ['recommendations', paramsKey] as const,
+  styleDna: ['style-dna'] as const,
 }

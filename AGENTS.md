@@ -85,18 +85,22 @@ src/attreq_api/
 ├── schemas/                # Pydantic request/response schemas
 ├── crud/                   # Async CRUD operations
 └── services/
-    ├── ai/                 # Gemini API integration, embeddings, Weaviate
+    ├── ai/                 # Classifier factory + Groq/Gemini/Claude/OpenAI classifiers
     ├── cache/              # Redis client
-    ├── recommendation/     # Outfit suggestion logic
-    └── storage/            # File upload handling
+    ├── recommendation/     # Outfit suggestion logic (Style DNA scoring integrated)
+    ├── storage/            # File upload handling (originals/processed/thumbnails/style-dna)
+    └── style_dna/          # Style DNA orchestrator, LLM prompts, scoring functions
 ```
+
+Endpoints: `auth`, `users` (includes `onboarding/complete`), `wardrobe` (includes `items/bulk`), `outfits`, `recommendations`, `style-dna`.
 
 Other paths: Alembic config at `apps/api/alembic.ini`, uploads at `apps/api/uploads`.
 
 Required env vars (copy `apps/api/.env.example` → `apps/api/.env`):
 - `DATABASE_URL` — postgresql+asyncpg connection string
 - `SECRET_KEY` — JWT signing key
-- `GEMINI_API_KEY` — clothing attribute extraction
+- `CLASSIFIER_PROVIDER` — `groq` (default) | `gemini` | `claude` | `openai`
+- `GROQ_API_KEY` / `GEMINI_API_KEY` / `CLAUDE_API_KEY` / `OPENAI_API_KEY` — whichever provider is active
 - `OPENWEATHER_API_KEY` — weather-based recommendations
 
 ## Mobile Architecture (apps/mobile/)
@@ -106,7 +110,10 @@ Expo 55, React Native 0.83, TypeScript, Expo Router (file-based routing).
 ```
 app/
 ├── (auth)/                 # Unauthenticated: login, register
-└── (protected)/(tabs)/     # Tab navigation for authenticated users
+├── (onboarding)/           # First-run: upload-style → results → review-items
+└── (protected)/
+    ├── (tabs)/             # Tab navigation for authenticated users
+    └── style-dna/          # Style DNA card (post-onboarding)
 src/
 ├── components/             # Reusable UI (common/, ui/, attreq/)
 ├── features/               # Screen-level components per domain
@@ -114,10 +121,11 @@ src/
 │   ├── wardrobe/
 │   ├── outfits/
 │   ├── recommendations/
-│   └── profile/
+│   ├── profile/
+│   └── style-dna/          # StyleDnaCard, PhotoGrid, FoundItemsCard, ItemReviewCard, hooks
 ├── lib/
-│   ├── api/                # Axios client + endpoint wrappers
-│   ├── query/              # TanStack Query hooks
+│   ├── api/                # Axios client + endpoint wrappers (style-dna.ts added)
+│   ├── query/              # TanStack Query hooks + queryKeys
 │   └── storage/            # Expo SecureStore (JWT tokens)
 ├── store/
 │   └── auth-store.ts       # Zustand auth state
@@ -126,6 +134,7 @@ src/
 
 **Key patterns:**
 - Route protection in `app/(protected)/_layout.tsx` — checks Zustand auth store
+- Onboarding gate in `app/index.tsx` — routes new users (`onboarding_completed=false`) to `/(onboarding)/upload-style`
 - Server state via TanStack Query in `src/lib/query/`; local UI state stays in components
 - Styling: NativeWind (Tailwind for RN) — use `className` props, not StyleSheet
 - Dense lists: FlashList over FlatList
@@ -167,6 +176,25 @@ curl -s http://localhost:8081/json    # lists JS debugger targets
 | `infra/docker/compose.api.yml` | Full dev stack (API + DB + Redis + Weaviate) |
 | `infra/docker/compose.api.dev.yml` | Local deps only (DB + Redis) — pair with `make dev-api` |
 | `infra/docker/compose.api.prod.yml` | Production stack |
+
+## Library Docs & Implementation Verification
+
+Use `ctx7` CLI to fetch current docs when implementing against or verifying any library, SDK, API, or framework — even well-known ones. Training data may be stale.
+
+```bash
+# Step 1 — resolve library ID
+npx ctx7@latest library <name> "<specific question>"
+
+# Step 2 — fetch docs
+npx ctx7@latest docs <libraryId> "<specific question>"
+
+# Step 3 — if answer unsatisfactory, retry with live research
+npx ctx7@latest docs <libraryId> "<specific question>" --research
+```
+
+**When to use:** implementing against a new SDK, verifying API shapes (request/response format, parameter names, method signatures), version migrations, debugging unexpected SDK behavior.
+
+**Not needed for:** refactoring, business logic, code review, general Python/TS patterns.
 
 ## Bash Preferences
 

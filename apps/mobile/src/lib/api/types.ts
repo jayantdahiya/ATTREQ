@@ -13,6 +13,8 @@ export interface User {
   last_login: string | null
   oauth_provider: string | null
   style_preferences: string | null
+  onboarding_completed: boolean
+  onboarding_step: string | null
 }
 
 export interface AuthResponse {
@@ -80,7 +82,74 @@ export interface OutfitScores {
   color_harmony: number
   formality: number
   preference_bonus: number
+  style_dna: number
+  behaviour: number
   total: number
+}
+
+// ─── Style DNA ───────────────────────────────────────────────────────────────
+
+export interface StyleDnaColorPalette {
+  dominant: string[]
+  accent: string[]
+  avoids: string[]
+  confidence: number
+}
+
+export interface StyleDnaAesthetic {
+  primary: string
+  secondary: string[]
+  confidence: number
+}
+
+export interface StyleDna {
+  aesthetic: StyleDnaAesthetic
+  color_palette: StyleDnaColorPalette
+  patterns: { preferred: string[]; confidence: number }
+  silhouette: { preference: string; confidence: number }
+  formality_bias: { level: number; label: string; confidence: number }
+  occasions: { primary: string[]; confidence: number }
+  behaviour_weights: Record<string, Record<string, number>>
+}
+
+export interface StyleDnaPhoto {
+  id: string
+  user_id: string
+  file_path: string
+  file_url: string
+  quality_ok: boolean
+  quality_reason: string | null
+  per_photo_extraction: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface StyleDnaUploadResponse {
+  photos_processed: number
+  photos_skipped: number
+  wardrobe_items_seeded: number
+  style_dna: StyleDna | null
+  photos: StyleDnaPhoto[]
+}
+
+export interface StyleDnaProfileResponse {
+  style_dna: StyleDna | null
+  photos: StyleDnaPhoto[]
+}
+
+export interface StyleDnaCorrection {
+  corrections: Partial<StyleDna>
+}
+
+export interface DetectedWardrobeItem {
+  category: string
+  subcategory: string
+  color_primary: string | null
+  color_secondary: string | null
+  pattern: string | null
+  occasion: string[]
+  season: string[]
+  confidence: number
+  bounding_region: string
 }
 
 export interface OutfitSuggestion {

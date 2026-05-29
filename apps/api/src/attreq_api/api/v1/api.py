@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from attreq_api.api.v1.endpoints import auth, outfits, recommendations, users, wardrobe
+from attreq_api.api.v1.endpoints import auth, outfits, recommendations, style_dna, users, wardrobe
 
 api_router = APIRouter()
 
@@ -11,6 +11,9 @@ api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 
 # Include user management routes
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+
+# Include Style DNA routes (prefix /users — sits alongside /users/me etc.)
+api_router.include_router(style_dna.router, prefix="/users", tags=["style-dna"])
 
 # Include wardrobe management routes
 api_router.include_router(wardrobe.router, prefix="/wardrobe", tags=["wardrobe"])

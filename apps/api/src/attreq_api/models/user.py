@@ -46,14 +46,21 @@ class User(Base):
     oauth_provider = Column(String(50), nullable=True)  # 'google', 'facebook', etc.
     oauth_id = Column(String(255), nullable=True)
 
-    # Style preferences (for future Style DNA feature)
-    style_preferences = Column(Text, nullable=True)  # JSON string
+    # Style DNA
+    style_preferences = Column(Text, nullable=True)  # JSON string — synthesized Style DNA profile
+
+    # Onboarding state — steps: pending | style_dna_upload | review | complete
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
+    onboarding_step = Column(String(50), default="pending", nullable=True)
 
     # Relationships
     wardrobe_items = relationship(
         "WardrobeItem", back_populates="user", cascade="all, delete-orphan"
     )
     outfits = relationship("Outfit", back_populates="user", cascade="all, delete-orphan")
+    style_dna_photos = relationship(
+        "StyleDnaPhoto", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, full_name={self.full_name})>"

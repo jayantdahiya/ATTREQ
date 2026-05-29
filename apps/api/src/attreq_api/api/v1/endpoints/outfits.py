@@ -218,6 +218,13 @@ async def mark_outfit_worn(
 
     logger.info(f"Outfit {outfit_id} marked as worn by user {current_user.id}")
 
+    # Update Style DNA behaviour weights based on worn signal
+    try:
+        from attreq_api.services.style_dna.style_dna_service import update_behaviour_weights
+        await update_behaviour_weights(db, current_user.id, outfit_id, signal="worn")
+    except Exception as e:
+        logger.warning(f"Failed to update behaviour weights for worn outfit: {e}")
+
     return OutfitResponse.model_validate(updated_outfit)
 
 
@@ -259,6 +266,15 @@ async def submit_outfit_feedback(
     logger.info(
         f"Feedback {feedback.feedback_score} submitted for outfit {outfit_id} by user {current_user.id}"
     )
+
+    # Update Style DNA behaviour weights based on feedback signal
+    if feedback.feedback_score != 0:
+        try:
+            from attreq_api.services.style_dna.style_dna_service import update_behaviour_weights
+            signal = "liked" if feedback.feedback_score == 1 else "disliked"
+            await update_behaviour_weights(db, current_user.id, outfit_id, signal=signal)
+        except Exception as e:
+            logger.warning(f"Failed to update behaviour weights for feedback: {e}")
 
     return OutfitResponse.model_validate(updated_outfit)
 

@@ -20,13 +20,19 @@ class FileStorageService:
         self.originals_dir = self.base_dir / "originals"
         self.processed_dir = self.base_dir / "processed"
         self.thumbnails_dir = self.base_dir / "thumbnails"
+        self.style_dna_dir = self.base_dir / "style-dna"
 
         # Create directories if they don't exist
         self._ensure_directories()
 
     def _ensure_directories(self) -> None:
         """Ensure all required directories exist."""
-        for directory in [self.originals_dir, self.processed_dir, self.thumbnails_dir]:
+        for directory in [
+            self.originals_dir,
+            self.processed_dir,
+            self.thumbnails_dir,
+            self.style_dna_dir,
+        ]:
             directory.mkdir(parents=True, exist_ok=True)
 
     def _generate_filename(self, user_id: uuid.UUID, extension: str) -> str:
@@ -86,6 +92,8 @@ class FileStorageService:
             target_dir = self.processed_dir
         elif subdirectory == "thumbnails":
             target_dir = self.thumbnails_dir
+        elif subdirectory == "style-dna":
+            target_dir = self.style_dna_dir
         else:
             raise ValueError(f"Invalid subdirectory: {subdirectory}")
 

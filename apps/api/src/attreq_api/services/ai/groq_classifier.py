@@ -89,6 +89,80 @@ class GroqClassifierService:
             logger.error(f"Groq single image classification failed: {str(e)}")
             raise
 
+    async def analyze_image(self, image_path: str, prompt: str) -> dict[str, Any]:
+        """Call Groq vision with a custom prompt. Returns raw JSON dict."""
+        if not Path(image_path).exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+        if not self.api_key:
+            raise ValueError("Groq API key not configured")
+
+        base64_data = self._encode_image_to_base64(image_path)
+        mime_type = self._get_mime_type(image_path)
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+        }
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(self.BASE_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+            text = data["choices"][0]["message"]["content"]
+            return json.loads(text)
+
+        except Exception as e:
+            logger.error(f"Groq analyze_image failed: {str(e)}")
+            raise
+
+    async def analyze_text(self, prompt: str) -> dict[str, Any]:
+        """Call Groq text-only with a custom prompt. Returns raw JSON dict."""
+        if not self.api_key:
+            raise ValueError("Groq API key not configured")
+
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+        }
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(self.BASE_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+            text = data["choices"][0]["message"]["content"]
+            return json.loads(text)
+
+        except Exception as e:
+            logger.error(f"Groq analyze_text failed: {str(e)}")
+            raise
+
     def _encode_image_to_base64(self, image_path: str) -> str:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")

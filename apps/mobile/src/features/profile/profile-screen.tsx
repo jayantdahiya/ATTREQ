@@ -108,6 +108,31 @@ export function ProfileScreen() {
         </EditorialCard>
 
         <View className="mt-7">
+          <MonoLabel>Style DNA</MonoLabel>
+          <EditorialCard className="mt-3 overflow-hidden p-0">
+            <Pressable
+              className="flex-row items-center gap-3 px-5 py-4"
+              onPress={() =>
+                user?.style_preferences
+                  ? router.push('/(protected)/style-dna/profile')
+                  : router.push('/(onboarding)/upload-style')
+              }
+            >
+              <Ionicons color={colors.textSecondary} name="sparkles-outline" size={18} />
+              <View className="flex-1">
+                <Text preset="bodySmall">
+                  {user?.style_preferences ? 'Your Style DNA' : 'Set up Style DNA'}
+                </Text>
+                <MonoLabel>
+                  {user?.style_preferences ? 'Tap to view or edit' : 'Personalise recommendations'}
+                </MonoLabel>
+              </View>
+              <QuietChevron />
+            </Pressable>
+          </EditorialCard>
+        </View>
+
+        <View className="mt-7">
           <MonoLabel>Preferences</MonoLabel>
           <EditorialCard className="mt-3 overflow-hidden p-0">
             <Pressable className="flex-row items-center gap-3 border-b px-5 py-4" onPress={() => locationMutation.mutate()} style={{ borderColor: colors.borderSoft }}>

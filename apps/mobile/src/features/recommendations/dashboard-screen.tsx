@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Location from 'expo-location'
 import { useState } from 'react'
-import { Alert, RefreshControl, ScrollView, View } from 'react-native'
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { AppSurface, EditorialCard, EditorialHeader, IconCircle, MonoLabel, WeatherStrip, fontFamily } from '@/components/attreq/editorial'
@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/common/empty-state'
 import { LoadingScreen } from '@/components/common/loading-screen'
 import { Button } from '@/components/ui/button'
 import { Text } from '@/components/ui/text'
+import { router } from 'expo-router'
 import { outfitsApi } from '@/lib/api/outfits'
 import { recommendationsApi } from '@/lib/api/recommendations'
 import { authApi } from '@/lib/api/auth'
@@ -254,6 +255,19 @@ export function DashboardScreen() {
           condition={recommendationsQuery.data?.weather.description}
           temp={recommendationsQuery.data?.weather.temp}
         />
+
+        {!currentUserQuery.data?.style_preferences && (
+          <Pressable
+            onPress={() => router.push('/(onboarding)/upload-style')}
+            className="mt-4 rounded-2xl px-4 py-3 flex-row items-center justify-between"
+            style={{ backgroundColor: colors.accentGold + '20', borderColor: colors.accentGold + '40', borderWidth: 1 }}
+          >
+            <Text className="text-sm" style={{ color: colors.textPrimary }}>
+              ✦ Personalise your recommendations
+            </Text>
+            <Text className="text-sm font-medium" style={{ color: colors.accentGold }}>→</Text>
+          </Pressable>
+        )}
 
         <View className="mt-6 flex-row items-center justify-between">
           <Text preset="h2" style={{ fontFamily: fontFamily.displaySemi, fontStyle: 'italic' }}>

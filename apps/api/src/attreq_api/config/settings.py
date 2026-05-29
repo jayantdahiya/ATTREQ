@@ -76,11 +76,31 @@ class Settings(BaseSettings):
     groq_model_name: str = Field(
         default="meta-llama/llama-4-scout-17b-16e-instruct", alias="GROQ_MODEL_NAME"
     )
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_model_name: str = Field(
+        default="gemini-2.0-flash", alias="GEMINI_MODEL_NAME"
+    )
+    gemini_batch_size: int = Field(default=5, alias="GEMINI_BATCH_SIZE")
+    claude_api_key: str | None = Field(default=None, alias="CLAUDE_API_KEY")
+    claude_model_name: str = Field(
+        default="claude-haiku-4-5-20251001", alias="CLAUDE_MODEL_NAME"
+    )
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_model_name: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL_NAME")
+    classifier_provider: str = Field(default="groq", alias="CLASSIFIER_PROVIDER")
     openweather_api_key: str | None = Field(default=None, alias="OPENWEATHER_API_KEY")
+
+    # Error tracking
+    sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
 
     # File upload settings
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
     upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
+
+    # Style DNA settings
+    style_dna_min_photos: int = Field(default=3, alias="STYLE_DNA_MIN_PHOTOS")
+    style_dna_max_photos: int = Field(default=8, alias="STYLE_DNA_MAX_PHOTOS")
+    style_dna_llm_concurrency: int = Field(default=3, alias="STYLE_DNA_LLM_CONCURRENCY")
 
     @validator("backend_cors_origins", pre=True)
     def assemble_cors_origins(cls, v):
