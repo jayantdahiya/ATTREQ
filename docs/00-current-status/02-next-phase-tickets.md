@@ -1,5 +1,7 @@
 # ATTREQ Next-Phase Development Tickets
 
+> **2026-06-10:** The remaining open tickets here are now planned in detail in the launch roadmap at [`docs/05-roadmap/`](../05-roadmap/00-roadmap-overview.md): **TKT-002** → Milestone 2 (data model & contracts), **TKT-009** → Milestone 5 (distribution & beta). Execute from the roadmap; this file stays as the historical ticket record.
+
 ## Purpose
 
 This backlog translates the current repo state into a mobile-first delivery sequence. The documentation rebaseline is complete. The next phase is about:

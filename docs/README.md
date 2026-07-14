@@ -95,6 +95,17 @@ Use this for decision support and experiments.
 - `mobile-frontend/`: React Native stack research and component-library evaluation
 - `llm-detection/`: wardrobe image classification experiments and supporting artifacts
 
+### `05-roadmap/`
+
+Use this for the active roadmap to beta launch (created 2026-06-10). Each milestone file is self-contained and executable single-shot by an LLM or developer.
+
+- `00-roadmap-overview.md`: milestone list, dependency graph, sequencing rationale, status table
+- `01-milestone-1-production-backend.md`: VPS deploy, R2 storage, prod compose fix
+- `02-milestone-2-data-model-contracts.md`: category taxonomy, API contract (TKT-002), geocoding
+- `03-milestone-3-complete-outfits.md`: footwear/outerwear slots and scoring
+- `04-milestone-4-testing-reliability.md`: test suites, backups, monitoring
+- `05-milestone-5-distribution-beta.md`: EAS, TestFlight/Play, mobile Sentry (TKT-009)
+
 ### `99-archive/`
 
 Use this for non-authoritative historical docs.
@@ -105,7 +116,7 @@ Use this for non-authoritative historical docs.
 
 - Current project status: `00-current-status/00-current-status.md`
 - Done vs pending work: `00-current-status/01-task-tracker.md`
-- What should be built next: `00-current-status/02-next-phase-tickets.md`
+- What should be built next: `05-roadmap/00-roadmap-overview.md` (active launch roadmap), then `00-current-status/02-next-phase-tickets.md`
 - Mobile implementation design: `02-implementation/plan/06-frontend.md`
 - Auth/session behavior: `02-implementation/plan/07-authentication.md`
 - Mobile test strategy: `02-implementation/plan/08-testing.md`

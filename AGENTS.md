@@ -2,17 +2,18 @@
 
 ## Project
 
-AI-powered wardrobe management and outfit recommendation platform. Users upload clothing images (auto-tagged via Gemini), build a digitized wardrobe, receive daily outfit suggestions based on weather, wear history, and context. **Mobile app is primary client**; web app is legacy secondary.
+AI-powered wardrobe management and outfit recommendation platform. Users upload clothing images (auto-tagged via LLM classifiers — Groq Llama 4 Scout is the live default), build a digitized wardrobe, receive daily outfit suggestions based on weather, wear history, and context. **Mobile app is primary client**; web app is legacy secondary.
 
 ## Docs Hierarchy
 
 Read in this order when context needed:
 1. `docs/README.md` — navigation guide
 2. `docs/00-current-status/00-current-status.md` — current implementation truth
-3. `docs/02-implementation/plan/06-frontend.md` — authoritative React Native plan
-4. `docs/03-execution/tasks/mobile-tasks-v1.md` — active mobile checklist
+3. `docs/05-roadmap/00-roadmap-overview.md` — active launch roadmap (milestone files are self-contained and executable)
+4. `docs/02-implementation/plan/06-frontend.md` — authoritative React Native plan
+5. `docs/03-execution/tasks/mobile-tasks-v1.md` — active mobile checklist
 
-Also: `docs/01-product/`, `docs/02-implementation/plan/` for product/planning context.
+Also: `docs/Pending.md` (known-gaps matrix), `docs/01-product/`, `docs/02-implementation/plan/` for product/planning context. Conflict rule: code wins over docs; `00-current-status/` wins over other docs.
 
 ## Monorepo Layout
 
@@ -96,6 +97,12 @@ Endpoints: `auth`, `users` (includes `onboarding/complete`), `wardrobe` (include
 
 Other paths: Alembic config at `apps/api/alembic.ini`, uploads at `apps/api/uploads`.
 
+**Cross-cutting flows** (span multiple modules — read these together):
+- **Classification pipeline:** wardrobe upload endpoint → `workers/image_processor.py` / `workers/batch_image_processor.py` → `services/ai/classifier_factory.py` (provider chosen by `CLASSIFIER_PROVIDER`) → `services/ai/schema_mapper.py` (single choke point mapping every provider's output to `WardrobeItem` fields) → DB. Background removal (`rembg`) and thumbnails happen in the same worker pass.
+- **Storage:** all image I/O goes through the `file_storage` singleton in `services/storage/file_handler.py` (local disk, `/uploads/...` URLs). Imported by the wardrobe endpoint, both workers, and `style_dna_service.py` — change storage behavior in one place, check all four call sites.
+- **Recommendation scoring** (`services/recommendation/algorithm.py`): outfits are top×bottom pairs scored `color_harmony 0.4 + formality 0.4 + preference 0.2`; when the user has Style DNA, weights switch to `color 0.2 + formality 0.2 + style_dna 0.4 + behaviour 0.2`. Category slotting is currently substring-based on free-text categories (known gap — see roadmap M2).
+- **Auth:** JWT access (15 min) + refresh (7 days) from `config/security.py`; mobile stores tokens in Expo SecureStore and refreshes via an Axios interceptor in `src/lib/api/`.
+
 Required env vars (copy `apps/api/.env.example` → `apps/api/.env`):
 - `DATABASE_URL` — postgresql+asyncpg connection string
 - `SECRET_KEY` — JWT signing key
@@ -176,6 +183,14 @@ curl -s http://localhost:8081/json    # lists JS debugger targets
 | `infra/docker/compose.api.yml` | Full dev stack (API + DB + Redis + Weaviate) |
 | `infra/docker/compose.api.dev.yml` | Local deps only (DB + Redis) — pair with `make dev-api` |
 | `infra/docker/compose.api.prod.yml` | Production stack |
+
+## CI
+
+GitHub Actions, path-scoped:
+- `.github/workflows/backend-ci.yml` — on `apps/api/**` changes: Ruff, `alembic upgrade head` against a Postgres 15 service, pytest
+- `.github/workflows/mobile-ci.yml` — on `apps/mobile/**` changes: `tsc --noEmit`, Jest
+
+Before pushing backend changes run `make lint && make test`; for mobile run `npm run typecheck && npm test` from `apps/mobile/`. New Alembic migrations must chain from the current head or CI fails.
 
 ## Library Docs & Implementation Verification
 

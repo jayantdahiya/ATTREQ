@@ -1,6 +1,8 @@
 # ATTREQ — Missing Links & Open Problems
 
 > Comprehensive reference covering all unresolved gaps across Architecture, Backend, Infrastructure, and Operations. Compiled from codebase analysis as of 2026-05-02.
+>
+> **2026-06-10:** All open items below are now sequenced into the active launch roadmap at [`docs/05-roadmap/`](05-roadmap/00-roadmap-overview.md). Execute milestones from there; mark rows here resolved as milestones complete.
 
 ***
 
