@@ -3,8 +3,8 @@
 //  ATTREQ
 //
 //  Real authenticated tab shell (M2), replacing MainTabsPlaceholderView.
-//  Floating `AttreqTabBar` over a switch of the four root tabs; Wardrobe is
-//  the first real tab, Today/History land in M4 and Profile in M5.
+//  Floating `AttreqTabBar` over a switch of the four root tabs; Today,
+//  Wardrobe and History are live (M2/M4), Profile lands in M5.
 //
 
 import SwiftUI
@@ -21,6 +21,12 @@ struct MainTabsView: View {
     /// kept alive across tab switches so wardrobe state (items, filter,
     /// polling) survives leaving and re-entering the tab.
     @State private var wardrobeViewModel: WardrobeViewModel?
+    /// Same lifecycle as `wardrobeViewModel` — suggestions/paging survive tab switches.
+    @State private var todayViewModel: TodayViewModel?
+    @State private var historyViewModel: HistoryViewModel?
+    /// Shared by Today (wear/feedback writes) and History (reads) so both
+    /// tabs hit the same store.
+    @State private var outfitsRepository: OutfitsRepository?
     @State private var isLoggingOut = false
 
     var body: some View {
@@ -40,6 +46,18 @@ struct MainTabsView: View {
                     repository: WardrobeRepository(apiClient: session.api)
                 )
             }
+            if todayViewModel == nil || historyViewModel == nil {
+                let outfits = outfitsRepository ?? OutfitsRepository(apiClient: session.api)
+                outfitsRepository = outfits
+                if todayViewModel == nil {
+                    todayViewModel = TodayViewModel(
+                        repository: RecommendationsRepository(apiClient: session.api)
+                    )
+                }
+                if historyViewModel == nil {
+                    historyViewModel = HistoryViewModel(repository: outfits)
+                }
+            }
         }
     }
 
@@ -47,7 +65,15 @@ struct MainTabsView: View {
     private var content: some View {
         switch activeTab {
         case .today:
-            MonoLabel("TODAY — M4", size: 12)
+            if let todayViewModel, let outfitsRepository {
+                TodayScreen(
+                    viewModel: todayViewModel,
+                    outfitsRepository: outfitsRepository,
+                    // A recorded wear/love/dismiss makes the History list
+                    // stale; its `.task` `load()` refetches on next entry.
+                    onOutfitRecorded: { historyViewModel?.markStale() }
+                )
+            }
 
         case .wardrobe:
             if let wardrobeViewModel {
@@ -55,7 +81,9 @@ struct MainTabsView: View {
             }
 
         case .history:
-            MonoLabel("HISTORY — M4", size: 12)
+            if let historyViewModel {
+                HistoryScreen(viewModel: historyViewModel)
+            }
 
         case .profile:
             profileStub

@@ -1,6 +1,6 @@
 # M4 — Today Dashboard & Outfits
 
-> **Status:** Planned (written 2026-07-15; starts after M3 commit)
+> **Status:** ✅ Complete (2026-07-15). 100 unit + 4 E2E UI tests green (incl. wear-flow: real recommendation → Wear → History entry w/ Worn pill); artboards 05+07 verified light+dark. Backend truths honored: wear is POST /outfits + POST /outfits/{id}/wear (no worn_date/weather in create body — doc's original mapping corrected), pill precedence feedback>worn, RN's Skip/Wear mono row is decorative → iOS skip is a local advance. Review fixed: History auto-refreshes after wear/love/dismiss (stale-mark hook), Today state survives tab switches, silent refresh failures now bannered, worn dates use the LOCAL calendar day (deliberate divergence from RN's UTC slice — diary semantics), pagination generation guard. Keyless notes: weather falls back to backend default; wear E2E provisions literal top/bottom categories (backend substring-slotting gap, roadmap M2).
 > **Parent:** [`00-goal.md`](00-goal.md). Environment: [`01-milestone-0-scaffold.md`](01-milestone-0-scaffold.md).
 > **⚠️ Dependency:** weather context requires `OPENWEATHER_API_KEY` in `apps/api/.env`. Without it recommendations must still render (weather strip degrades gracefully — verify what the backend returns keyless and mirror RN's handling).
 
