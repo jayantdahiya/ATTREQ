@@ -1,0 +1,32 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main, ios-native]
+    paths: ["apps/ios/**", ".github/workflows/ios-ci.yml"]
+  pull_request:
+    paths: ["apps/ios/**", ".github/workflows/ios-ci.yml"]
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+
+      - name: Build and test
+        working-directory: apps/ios
+        run: |
+          set -o pipefail
+          SIM=$(xcrun simctl list devices available | grep -E "iPhone" | head -1 | sed -E 's/^ +([^(]+) \(.*/\1/' | xargs)
+          echo "Using simulator: $SIM"
+          xcodebuild -project ATTREQ.xcodeproj -scheme ATTREQ \
+            -destination "platform=iOS Simulator,name=$SIM" \
+            test | tail -80

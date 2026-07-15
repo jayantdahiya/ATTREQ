@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ATTREQ — Redesign v2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { background: #E4E1DC; }
+  </style>
+
+  <template id="__bundler_thumbnail">
+    <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+      <rect width="120" height="80" fill="#F5F2EE"/>
+      <rect x="30" y="16" width="60" height="48" rx="8" fill="#fff" stroke="rgba(28,25,23,0.1)" stroke-width="0.5"/>
+      <text x="60" y="42" font-family="Georgia,serif" font-size="14" font-weight="600" letter-spacing="3" fill="#1C1917" text-anchor="middle">ATTREQ</text>
+      <text x="60" y="54" font-family="Georgia,serif" font-size="6" font-style="italic" fill="#9B7B5A" text-anchor="middle">Your closet, curated.</text>
+    </svg>
+  </template>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="attreq-shared.jsx"></script>
+  <script type="text/babel" src="attreq-auth.jsx"></script>
+  <script type="text/babel" src="attreq-app.jsx"></script>
+  <script type="text/babel" src="attreq-onboarding.jsx"></script>
+
+  <script type="text/babel">
+    function App() {
+      return (
+        <DesignCanvas>
+
+          <DCSection id="auth" title="Auth & Registration">
+            <DCArtboard id="login" label="01 — Login" width={390} height={844}>
+              <ATTREQLogin />
+            </DCArtboard>
+            <DCArtboard id="reg-account" label="02 — Register: Account" width={390} height={844}>
+              <ATTREQRegisterAccount />
+            </DCArtboard>
+            <DCArtboard id="reg-style" label="03 — Register: Style" width={390} height={844}>
+              <ATTREQRegisterStyle />
+            </DCArtboard>
+            <DCArtboard id="reg-location" label="04 — Location Onboarding" width={390} height={844}>
+              <ATTREQRegisterLocation />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="app" title="Main App">
+            <DCArtboard id="dashboard" label="05 — Dashboard" width={390} height={844}>
+              <ATTREQDashboard />
+            </DCArtboard>
+            <DCArtboard id="wardrobe" label="06 — Wardrobe" width={390} height={844}>
+              <ATTREQWardrobe />
+            </DCArtboard>
+            <DCArtboard id="history" label="07 — History" width={390} height={844}>
+              <ATTREQHistory />
+            </DCArtboard>
+            <DCArtboard id="profile" label="08 — Profile" width={390} height={844}>
+              <ATTREQProfile />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="onboarding" title="Style DNA Onboarding">
+            <DCArtboard id="style-dna" label="09 — Style DNA Upload" width={390} height={844}>
+              <ATTREQStyleDNA />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="auth-dark" title="Auth & Registration — Dark">
+            <DCArtboard id="login-dark" label="01 — Login · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQLogin />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="reg-account-dark" label="02 — Register: Account · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQRegisterAccount />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="reg-style-dark" label="03 — Register: Style · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQRegisterStyle />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="reg-location-dark" label="04 — Location Onboarding · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQRegisterLocation />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="app-dark" title="Main App — Dark">
+            <DCArtboard id="dashboard-dark" label="05 — Dashboard · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQDashboard />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="wardrobe-dark" label="06 — Wardrobe · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQWardrobe />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="history-dark" label="07 — History · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQHistory />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+            <DCArtboard id="profile-dark" label="08 — Profile · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQProfile />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="onboarding-dark" title="Style DNA Onboarding — Dark">
+            <DCArtboard id="style-dna-dark" label="09 — Style DNA · Dark" width={390} height={844}>
+              <ATTREQThemeCtx.Provider value={ATTREQ_DARK_C}>
+                <ATTREQStyleDNA />
+              </ATTREQThemeCtx.Provider>
+            </DCArtboard>
+          </DCSection>
+
+        </DesignCanvas>
+      )
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+  </script>
+</body>
+</html>
