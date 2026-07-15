@@ -1,6 +1,6 @@
 # M2 — Wardrobe
 
-> **Status:** In progress (started 2026-07-15)
+> **Status:** ✅ Complete (2026-07-15). E2E upload verified (multipart → backend pipeline incl. rembg + fallback color classification → polling → grid); artboard 06 matches light+dark; 46 unit + 2 E2E UI tests green. Review fixed: filter buckets now cover the classifier's closed 20-term vocabulary, cancellation no longer surfaces phantom offline banners or post-disappear pollers, real pagination (loadMore + page-1 poll merge), optimistic upload placeholder, fresh poll deadline per upload. Note: PHPicker resists synthesized taps → `-uitest-autopick-photo` hook feeds a synthetic JPEG through the real upload path; picker itself human-verified via screenshot.
 > **Parent:** [`00-goal.md`](00-goal.md). Environment: [`01-milestone-0-scaffold.md`](01-milestone-0-scaffold.md) (backend :8001, compose `attreq-dev`).
 > **⚠️ Dependency:** clothing classification requires `GROQ_API_KEY` in `apps/api/.env` (or another `CLASSIFIER_PROVIDER` + key). Without it uploads land in `failed`/`pending` status — UI must handle that state gracefully either way.
 

@@ -59,16 +59,23 @@ final class AuthFlowUITests: XCTestCase {
         XCTAssertTrue(completeOnboarding.waitForExistence(timeout: 20), "Onboarding placeholder should appear after registration")
         completeOnboarding.tap()
 
-        // 6. Onboarding completed → main tabs placeholder.
+        // 6. Onboarding completed → main tab shell (Today tab active).
+        let todayTab = app.buttons["tab-TODAY"]
+        XCTAssertTrue(todayTab.waitForExistence(timeout: 15), "Tab shell should appear after onboarding")
+
+        // Log out lives in the Profile tab since M2's real tab shell.
+        app.buttons["tab-PROFILE"].tap()
         let logOut = app.buttons["button-Log out"]
-        XCTAssertTrue(logOut.waitForExistence(timeout: 15), "Tabs placeholder should appear after onboarding")
+        XCTAssertTrue(logOut.waitForExistence(timeout: 10), "Profile tab should offer Log out")
 
         // 7. Relaunch WITHOUT reset: session must persist via Keychain.
         app.terminate()
         app = XCUIApplication()
         app.launch()
+        XCTAssertTrue(app.buttons["tab-PROFILE"].waitForExistence(timeout: 15), "Session should persist across relaunch")
+        app.buttons["tab-PROFILE"].tap()
         let logOutAfterRelaunch = app.buttons["button-Log out"]
-        XCTAssertTrue(logOutAfterRelaunch.waitForExistence(timeout: 15), "Session should persist across relaunch")
+        XCTAssertTrue(logOutAfterRelaunch.waitForExistence(timeout: 10), "Profile tab should offer Log out after relaunch")
 
         // 8. Logout → login screen.
         logOutAfterRelaunch.tap()
@@ -82,7 +89,13 @@ final class AuthFlowUITests: XCTestCase {
         loginPassword.tap()
         loginPassword.typeText(password)
         app.buttons["button-Sign in"].tap()
-        XCTAssertTrue(app.buttons["button-Log out"].waitForExistence(timeout: 15), "Login should reach the authenticated state")
+        XCTAssertTrue(app.buttons["tab-TODAY"].waitForExistence(timeout: 15), "Login should reach the authenticated tab shell")
+        // Dismiss the password-autofill save prompt if the simulator shows it,
+        // so later tests inherit a clean foreground.
+        let notNow = app.buttons["Not Now"]
+        if notNow.waitForExistence(timeout: 3) {
+            notNow.tap()
+        }
     }
 
     // MARK: - Helpers

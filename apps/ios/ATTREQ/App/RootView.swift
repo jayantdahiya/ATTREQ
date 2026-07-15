@@ -43,6 +43,7 @@ struct RootView: View {
         case "register-account": RegisterFlowView(initialStep: 0)
         case "register-style": RegisterFlowView(initialStep: 1)
         case "register-location": RegisterFlowView(initialStep: 2)
+        case "wardrobe": MainTabsView(initialTab: .wardrobe)
         default: LoginView()
         }
     }
@@ -64,7 +65,7 @@ struct RootView: View {
 
         case let .authenticated(user):
             if user.onboardingCompleted {
-                MainTabsPlaceholderView()
+                MainTabsView()
             } else {
                 OnboardingPlaceholderView()
             }

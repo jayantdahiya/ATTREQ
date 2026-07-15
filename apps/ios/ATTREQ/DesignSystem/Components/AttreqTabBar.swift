@@ -103,6 +103,7 @@ struct AttreqTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(tab.label.capitalized)
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
+        .accessibilityIdentifier("tab-\(tab.label)")
     }
 }
 

@@ -111,6 +111,13 @@ final class APIClient: Sendable {
         case let .raw(data, contentType):
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
             request.httpBody = data
+        case let .multipart(fields):
+            let boundary = MultipartEncoding.randomBoundary()
+            request.setValue(
+                MultipartEncoding.contentType(boundary: boundary),
+                forHTTPHeaderField: "Content-Type"
+            )
+            request.httpBody = MultipartEncoding.encode(fields, boundary: boundary)
         }
         return request
     }

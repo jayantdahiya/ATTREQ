@@ -29,6 +29,9 @@ final class AppSession {
 
     private let authSession: AuthSession
     private let apiClient: APIClient
+
+    /// Authenticated API client for feature repositories (M2+ tabs).
+    var api: APIClient { apiClient }
     private let logger = Logger(subsystem: "com.attreq.ios", category: "AppSession")
 
     /// `bootstrap()` runs once per process; `.task` re-fires are no-ops.

@@ -2,49 +2,12 @@
 //  Placeholders.swift
 //  ATTREQ
 //
-//  Temporary post-auth destinations for M1 so the routing gate is testable
-//  end-to-end. Replaced by real screens in M2 (tabs) and M3 (Style DNA
-//  onboarding).
+//  Temporary post-auth destinations so the routing gate is testable
+//  end-to-end. The M2 tab shell is real (`MainTabsView`); Style DNA
+//  onboarding is replaced in M3.
 //
 
 import SwiftUI
-
-// MARK: - Main tabs placeholder (M2+)
-
-/// Stand-in for the authenticated tab shell. Includes a temporary logout
-/// button so the full E2E loop (register → relaunch → logout → login) works.
-struct MainTabsPlaceholderView: View {
-    @Environment(AppSession.self) private var session
-
-    @State private var activeTab: AttreqTab = .today
-    @State private var isLoggingOut = false
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            Theme.bg.ignoresSafeArea()
-
-            VStack(spacing: 28) {
-                Spacer()
-                MonoLabel("M2+ — coming soon", size: 12)
-                // Temporary: real logout lives in the Profile tab (M4).
-                AttreqPrimaryButton("Log out", isLoading: isLoggingOut) {
-                    guard !isLoggingOut else { return }
-                    isLoggingOut = true
-                    Task {
-                        await session.logout()
-                        isLoggingOut = false
-                    }
-                }
-                .padding(.horizontal, 64)
-                Spacer()
-            }
-
-            AttreqTabBar(active: activeTab) { activeTab = $0 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 20)
-        }
-    }
-}
 
 // MARK: - Onboarding placeholder (M3)
 
@@ -83,11 +46,6 @@ struct OnboardingPlaceholderView: View {
 }
 
 // MARK: - Previews
-
-#Preview("Main tabs placeholder") {
-    MainTabsPlaceholderView()
-        .environment(AppSession())
-}
 
 #Preview("Onboarding placeholder") {
     OnboardingPlaceholderView()
