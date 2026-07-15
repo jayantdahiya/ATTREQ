@@ -72,6 +72,7 @@ struct AttreqPrimaryButton: View {
         }
         .buttonStyle(AttreqPressableButtonStyle())
         .disabled(isLoading)
+        .accessibilityIdentifier("button-\(title)")
     }
 }
 

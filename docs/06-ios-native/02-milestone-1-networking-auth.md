@@ -1,6 +1,6 @@
 # M1 — Networking Core & Auth
 
-> **Status:** In progress (started 2026-07-15)
+> **Status:** ✅ Complete (2026-07-15). E2E smoke (register wizard → onboarding gate → Keychain persistence → logout → login) green via XCUITest against live backend; artboards 01–04 verified light+dark. Review fixed: refresh-lifecycle races (epoch guard, 3-state refresh outcome), FastAPI 422 array parsing, backend password policy mirrored client-side, Keychain ThisDeviceOnly, LocationProvider cancellation, focus chains. Known divergence: backend `PUT /users/me` ignores `style_preferences` (schema gap; sent best-effort).
 > **Parent:** [`00-goal.md`](00-goal.md). Environment facts (backend on :8001, compose project `attreq-dev`, ports 5433/6380): see [`01-milestone-0-scaffold.md`](01-milestone-0-scaffold.md).
 
 ## Objective

@@ -43,6 +43,7 @@ struct AttreqChip: View {
         .buttonStyle(.plain)
         .padding(.vertical, -8)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("chip-\(label)")
     }
 }
 

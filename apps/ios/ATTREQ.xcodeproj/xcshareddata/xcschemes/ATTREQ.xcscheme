@@ -39,6 +39,16 @@
                ReferencedContainer = "container:ATTREQ.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "A70000000000000000000026"
+               BuildableName = "ATTREQUITests.xctest"
+               BlueprintName = "ATTREQUITests"
+               ReferencedContainer = "container:ATTREQ.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

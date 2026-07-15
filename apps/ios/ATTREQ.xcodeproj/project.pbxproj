@@ -9,10 +9,18 @@
 /* Begin PBXFileReference section */
 		A70000000000000000000004 /* ATTREQ.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ATTREQ.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7000000000000000000001C /* ATTREQTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ATTREQTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7000000000000000000002C /* ATTREQUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ATTREQUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
 		A7000000000000000000001E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A70000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A70000000000000000000006;
+			remoteInfo = ATTREQ;
+		};
+		A7000000000000000000002E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A70000000000000000000001 /* Project object */;
 			proxyType = 1;
@@ -32,6 +40,11 @@
 			path = ATTREQTests;
 			sourceTree = "<group>";
 		};
+		A70000000000000000000025 /* ATTREQUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ATTREQUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +62,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A70000000000000000000028 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -57,6 +77,7 @@
 			children = (
 				A70000000000000000000005 /* ATTREQ */,
 				A70000000000000000000015 /* ATTREQTests */,
+				A70000000000000000000025 /* ATTREQUITests */,
 				A70000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +87,7 @@
 			children = (
 				A70000000000000000000004 /* ATTREQ.app */,
 				A7000000000000000000001C /* ATTREQTests.xctest */,
+				A7000000000000000000002C /* ATTREQUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,6 +139,28 @@
 			productReference = A7000000000000000000001C /* ATTREQTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		A70000000000000000000026 /* ATTREQUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000029 /* Build configuration list for PBXNativeTarget "ATTREQUITests" */;
+			buildPhases = (
+				A70000000000000000000027 /* Sources */,
+				A70000000000000000000028 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A7000000000000000000002D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A70000000000000000000025 /* ATTREQUITests */,
+			);
+			name = ATTREQUITests;
+			packageProductDependencies = (
+			);
+			productName = ATTREQUITests;
+			productReference = A7000000000000000000002C /* ATTREQUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXTargetDependency section */
@@ -124,6 +168,11 @@
 			isa = PBXTargetDependency;
 			target = A70000000000000000000006 /* ATTREQ */;
 			targetProxy = A7000000000000000000001E /* PBXContainerItemProxy */;
+		};
+		A7000000000000000000002D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A70000000000000000000006 /* ATTREQ */;
+			targetProxy = A7000000000000000000002E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -139,6 +188,10 @@
 						CreatedOnToolsVersion = 26.0;
 					};
 					A70000000000000000000016 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A70000000000000000000006;
+					};
+					A70000000000000000000026 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = A70000000000000000000006;
 					};
@@ -160,6 +213,7 @@
 			targets = (
 				A70000000000000000000006 /* ATTREQ */,
 				A70000000000000000000016 /* ATTREQTests */,
+				A70000000000000000000026 /* ATTREQUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -183,6 +237,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A70000000000000000000017 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000000000000000000027 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -389,6 +450,40 @@
 			};
 			name = Debug;
 		};
+		A7000000000000000000002A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.attreq.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = ATTREQ;
+			};
+			name = Debug;
+		};
+		A7000000000000000000002B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.attreq.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = ATTREQ;
+			};
+			name = Release;
+		};
 		A7000000000000000000001B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -432,6 +527,15 @@
 			buildConfigurations = (
 				A7000000000000000000001A /* Debug */,
 				A7000000000000000000001B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000029 /* Build configuration list for PBXNativeTarget "ATTREQUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7000000000000000000002A /* Debug */,
+				A7000000000000000000002B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
