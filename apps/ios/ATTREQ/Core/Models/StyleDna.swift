@@ -74,26 +74,71 @@ struct StyleDnaPhoto: Codable, Sendable, Equatable, Identifiable {
 }
 
 /// Mirrors backend `StyleDnaUploadResponse` / TS `StyleDnaUploadResponse`.
+///
+/// `styleDna` decodes LENIENTLY: the backend stores the synthesis LLM's output
+/// as an untyped `dict[str, Any]`, so a shape-drifted blob (wrong types,
+/// missing subfields) must not fail the whole response — it degrades to the
+/// same `nil` the backend sends when synthesis is skipped, and the UI shows
+/// its existing no-DNA state. `StyleDna` itself stays strict.
 struct StyleDnaUploadResponse: Codable, Sendable, Equatable {
     let photosProcessed: Int
     let photosSkipped: Int
     let wardrobeItemsSeeded: Int
     let styleDna: StyleDna?
     let photos: [StyleDnaPhoto]
+
+    init(
+        photosProcessed: Int,
+        photosSkipped: Int,
+        wardrobeItemsSeeded: Int,
+        styleDna: StyleDna?,
+        photos: [StyleDnaPhoto]
+    ) {
+        self.photosProcessed = photosProcessed
+        self.photosSkipped = photosSkipped
+        self.wardrobeItemsSeeded = wardrobeItemsSeeded
+        self.styleDna = styleDna
+        self.photos = photos
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        photosProcessed = try container.decode(Int.self, forKey: .photosProcessed)
+        photosSkipped = try container.decode(Int.self, forKey: .photosSkipped)
+        wardrobeItemsSeeded = try container.decode(Int.self, forKey: .wardrobeItemsSeeded)
+        styleDna = (try? container.decodeIfPresent(StyleDna.self, forKey: .styleDna)) ?? nil
+        photos = try container.decode([StyleDnaPhoto].self, forKey: .photos)
+    }
 }
 
 /// Mirrors backend `StyleDnaProfileResponse` / TS `StyleDnaProfileResponse`.
+///
+/// `styleDna` decodes LENIENTLY — see `StyleDnaUploadResponse`: malformed LLM
+/// output degrades to `nil` (the existing no-DNA UX) instead of failing the
+/// response; the photos still decode.
 struct StyleDnaProfileResponse: Codable, Sendable, Equatable {
     let styleDna: StyleDna?
     let photos: [StyleDnaPhoto]
+
+    init(styleDna: StyleDna?, photos: [StyleDnaPhoto]) {
+        self.styleDna = styleDna
+        self.photos = photos
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        styleDna = (try? container.decodeIfPresent(StyleDna.self, forKey: .styleDna)) ?? nil
+        photos = try container.decode([StyleDnaPhoto].self, forKey: .photos)
+    }
 }
 
 /// Mirrors backend `StyleDnaCorrection` / TS `StyleDnaCorrection`.
 ///
 /// TS types this as `Partial<StyleDna>`, which has no direct Swift analogue;
 /// the backend accepts `dict[str, Any]`, so corrections are sent as arbitrary
-/// JSON. Build keys in camelCase — the encoder's `.convertToSnakeCase` strategy
-/// converts them to the snake_case keys the backend expects.
+/// JSON. Build keys in the backend's snake_case form (`"color_palette"`, …) —
+/// the encoder's `.convertToSnakeCase` strategy does NOT rewrite dictionary
+/// String keys on this runtime; they pass through verbatim.
 struct StyleDnaCorrection: Codable, Sendable, Equatable {
     var corrections: [String: JSONValue]
 }

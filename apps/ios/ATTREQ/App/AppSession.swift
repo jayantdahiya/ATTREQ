@@ -44,6 +44,16 @@ final class AppSession {
         apiClient = APIClient(baseURL: baseURL, authSession: auth)
     }
 
+    #if DEBUG
+    /// Test-only seam: inject a preconfigured transport (mock `URLProtocol`
+    /// API client) instead of the `AppConfig` defaults, so unit tests can
+    /// exercise flows like `completeOnboarding` without real networking.
+    init(apiClient: APIClient, authSession: AuthSession) {
+        self.authSession = authSession
+        self.apiClient = apiClient
+    }
+    #endif
+
     // MARK: - Lifecycle
 
     /// Restores the session on launch: with stored tokens, validates them via

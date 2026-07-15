@@ -19,7 +19,8 @@ struct RootView: View {
     }
 
     /// `-screen <name>` jumps straight to one screen for design audits:
-    /// `register-account` / `register-style` / `register-location`.
+    /// `register-account` / `register-style` / `register-location` /
+    /// `wardrobe` / `style-dna-upload` / `style-dna`.
     private var auditScreen: String? {
         let args = ProcessInfo.processInfo.arguments
         guard let index = args.firstIndex(of: "-screen"), args.indices.contains(index + 1) else { return nil }
@@ -44,6 +45,8 @@ struct RootView: View {
         case "register-style": RegisterFlowView(initialStep: 1)
         case "register-location": RegisterFlowView(initialStep: 2)
         case "wardrobe": MainTabsView(initialTab: .wardrobe)
+        case "style-dna-upload": OnboardingFlowView()
+        case "style-dna": StyleDnaProfileView()
         default: LoginView()
         }
     }
@@ -67,7 +70,7 @@ struct RootView: View {
             if user.onboardingCompleted {
                 MainTabsView()
             } else {
-                OnboardingPlaceholderView()
+                OnboardingFlowView()
             }
         }
     }

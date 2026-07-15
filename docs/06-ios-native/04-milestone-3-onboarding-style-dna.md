@@ -1,6 +1,6 @@
 # M3 — Onboarding & Style DNA
 
-> **Status:** Planned (written 2026-07-15; starts after M2 commit)
+> **Status:** ✅ Complete (2026-07-15). 64 unit + 3 E2E UI tests green; artboard 09 verified light+dark; degraded keyless mode (backend 422 on all-photos-unusable) surfaced + skip path E2E-tested. Backend facts honored: items pre-seeded server-side (review toggles advisory, mirroring RN), delete is all-photos-only, regenerate returns upload-response shape, correction keys snake_case. Review fixed: retry now deletes stored seed photos first (no server-side duplicates), lenient styleDna decode (malformed LLM output → nil-DNA UX, not a dead-end), profile empty state no longer offers an impossible regenerate, upload-screen state races. Deferred: Style DNA correction (PATCH) UI → M5 with the Profile wiring.
 > **Parent:** [`00-goal.md`](00-goal.md). Environment: [`01-milestone-0-scaffold.md`](01-milestone-0-scaffold.md).
 > **⚠️ Dependency:** Style DNA extraction calls the LLM classifier — requires `GROQ_API_KEY` (or alternative) in `apps/api/.env`. Flows must degrade gracefully without it (upload succeeds, extraction fails → skip path still works).
 

@@ -469,6 +469,76 @@ struct ModelDecodingTests {
         #expect(response.photos.isEmpty)
     }
 
+    /// The backend stores the synthesis LLM's output as an untyped dict, so a
+    /// shape-drifted style_dna ("secondary": null, string confidence) must
+    /// degrade to `styleDna == nil` — the existing no-DNA UX — instead of
+    /// failing the whole response. Everything else still decodes.
+    private static let malformedStyleDnaJSON = """
+    {
+      "aesthetic": {"primary": "minimalist", "secondary": null, "confidence": "high"},
+      "color_palette": {"dominant": ["navy"], "accent": [], "avoids": [], "confidence": 0.8},
+      "patterns": {"preferred": ["solid"], "confidence": 0.7},
+      "silhouette": {"preference": "tailored", "confidence": 0.6},
+      "formality_bias": {"level": 1.5, "label": "smart-casual", "confidence": 0.7},
+      "occasions": {"primary": ["casual"], "confidence": 0.7},
+      "behaviour_weights": {}
+    }
+    """
+
+    private static let styleDnaPhotoJSON = """
+    {
+      "id": "55555555-5555-5555-5555-555555555555",
+      "user_id": "b7c1a5e2-4f5d-4a4b-9d0f-2a51c3f8e901",
+      "file_path": "uploads/style_dna/photo1.jpg",
+      "file_url": "http://localhost:8001/uploads/style_dna/photo1.jpg",
+      "quality_ok": true,
+      "quality_reason": null,
+      "per_photo_extraction": {"usable": true},
+      "created_at": "2026-07-14T16:40:12.345678Z"
+    }
+    """
+
+    @Test func malformedStyleDnaDegradesToNilInUploadResponse() throws {
+        let json = """
+        {
+          "photos_processed": 3,
+          "photos_skipped": 0,
+          "wardrobe_items_seeded": 2,
+          "style_dna": \(Self.malformedStyleDnaJSON),
+          "photos": [\(Self.styleDnaPhotoJSON)]
+        }
+        """
+        let response = try decode(StyleDnaUploadResponse.self, from: json)
+        #expect(response.styleDna == nil)
+        #expect(response.photosProcessed == 3)
+        #expect(response.photosSkipped == 0)
+        #expect(response.wardrobeItemsSeeded == 2)
+        #expect(response.photos.count == 1)
+        #expect(response.photos.first?.id == "55555555-5555-5555-5555-555555555555")
+        #expect(response.photos.first?.perPhotoExtraction?["usable"] == .bool(true))
+    }
+
+    @Test func malformedStyleDnaDegradesToNilInProfileResponse() throws {
+        let json = """
+        {
+          "style_dna": \(Self.malformedStyleDnaJSON),
+          "photos": [\(Self.styleDnaPhotoJSON)]
+        }
+        """
+        let response = try decode(StyleDnaProfileResponse.self, from: json)
+        #expect(response.styleDna == nil)
+        #expect(response.photos.count == 1)
+        #expect(response.photos.first?.fileUrl.hasSuffix("photo1.jpg") == true)
+    }
+
+    /// The leniency lives ONLY on the response wrappers — `StyleDna` itself
+    /// stays strict, so direct decodes of a malformed blob still throw.
+    @Test func styleDnaItselfStaysStrict() {
+        #expect(throws: DecodingError.self) {
+            _ = try Self.makeDecoder().decode(StyleDna.self, from: Data(Self.malformedStyleDnaJSON.utf8))
+        }
+    }
+
     // MARK: - Request encoding (round-trip through .convertToSnakeCase)
 
     @Test func encodesRegisterRequestWithSnakeCaseKeys() throws {

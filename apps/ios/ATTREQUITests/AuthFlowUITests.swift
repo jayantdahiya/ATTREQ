@@ -54,10 +54,13 @@ final class AuthFlowUITests: XCTestCase {
         cityField.typeText("Milan")
         tapButton(app, beginningWith: "button-Create account")
 
-        // 5. Registered + logged in → onboarding gate (fresh users).
-        let completeOnboarding = app.buttons["button-Complete onboarding"]
-        XCTAssertTrue(completeOnboarding.waitForExistence(timeout: 20), "Onboarding placeholder should appear after registration")
-        completeOnboarding.tap()
+        // 5. Registered + logged in → onboarding gate: the Style DNA upload
+        // screen (M3). This smoke test takes the skip path; the full photo
+        // flow is covered by OnboardingFlowUITests.
+        let skipLink = app.descendants(matching: .any)
+            .matching(identifier: "link-skip-onboarding").firstMatch
+        XCTAssertTrue(skipLink.waitForExistence(timeout: 20), "Style DNA upload screen should appear after registration")
+        skipLink.tap()
 
         // 6. Onboarding completed → main tab shell (Today tab active).
         let todayTab = app.buttons["tab-TODAY"]

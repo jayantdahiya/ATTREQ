@@ -3,10 +3,12 @@ import Foundation
 /// Type-safe representation of arbitrary JSON, used for backend fields typed as
 /// `dict[str, Any]` (e.g. `StyleDnaPhoto.perPhotoExtraction`, `Outfit.weatherContext`).
 ///
-/// Gotcha: `JSONDecoder.keyDecodingStrategy = .convertFromSnakeCase` also converts the
-/// string keys of `[String: JSONValue]` dictionaries (e.g. `"quality_reason"` decodes as
-/// `"qualityReason"`). Look up keys in camelCase after decoding; the matching
-/// `.convertToSnakeCase` encoding strategy converts them back on the way out.
+/// Key handling: on the modern Foundation JSON coders (iOS 17+),
+/// `.convertFromSnakeCase`/`.convertToSnakeCase` do NOT rewrite the String keys
+/// of `[String: JSONValue]` dictionaries — keys pass through verbatim (e.g.
+/// `"quality_reason"` stays `"quality_reason"`). Look up and build keys in the
+/// backend's snake_case form. Pinned by ModelDecodingTests and
+/// StyleDnaRepositoryTests.
 enum JSONValue: Codable, Sendable, Equatable {
     case string(String)
     case number(Double)
