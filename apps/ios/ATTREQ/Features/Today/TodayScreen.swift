@@ -81,12 +81,15 @@ struct TodayScreen: View {
                 }
             }
             Spacer(minLength: 12)
-            // Inert for now — menu ships post-M4.
+            // Decorative menu circle per artboard 05 — deliberately inert
+            // (no menu exists in the native port), so it's hidden from
+            // assistive tech to avoid announcing a non-functional control.
             Circle()
                 .strokeBorder(Theme.border, lineWidth: 1)
                 .frame(width: 34, height: 34)
                 .overlay(AttreqIcon.menu.view(size: 15, color: Theme.t2))
                 .padding(.top, 22)
+                .accessibilityHidden(true)
         }
     }
 

@@ -122,6 +122,9 @@ struct UploadStyleView: View {
                 Button {
                     model.removePhoto(at: index)
                 } label: {
+                    // Fixed black scrim + white glyph by design: this sits on
+                    // top of arbitrary photo content, so it must not follow
+                    // the light/dark theme.
                     Circle()
                         .fill(Color.black.opacity(0.45))
                         .frame(width: 22, height: 22)

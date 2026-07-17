@@ -3,8 +3,8 @@
 //  ATTREQ
 //
 //  Real authenticated tab shell (M2), replacing MainTabsPlaceholderView.
-//  Floating `AttreqTabBar` over a switch of the four root tabs; Today,
-//  Wardrobe and History are live (M2/M4), Profile lands in M5.
+//  Floating `AttreqTabBar` over a switch of the four root tabs; all four are
+//  live (Today/Wardrobe M2, History M4, Profile M5).
 //
 
 import SwiftUI
@@ -27,7 +27,10 @@ struct MainTabsView: View {
     /// Shared by Today (wear/feedback writes) and History (reads) so both
     /// tabs hit the same store.
     @State private var outfitsRepository: OutfitsRepository?
-    @State private var isLoggingOut = false
+    /// Same lifecycle as the other tab models — profile stats survive tab
+    /// switches. Shares `outfitsRepository` so the Worn/Streak stats read the
+    /// same store the Today tab writes to.
+    @State private var profileViewModel: ProfileViewModel?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -46,7 +49,7 @@ struct MainTabsView: View {
                     repository: WardrobeRepository(apiClient: session.api)
                 )
             }
-            if todayViewModel == nil || historyViewModel == nil {
+            if todayViewModel == nil || historyViewModel == nil || profileViewModel == nil {
                 let outfits = outfitsRepository ?? OutfitsRepository(apiClient: session.api)
                 outfitsRepository = outfits
                 if todayViewModel == nil {
@@ -56,6 +59,12 @@ struct MainTabsView: View {
                 }
                 if historyViewModel == nil {
                     historyViewModel = HistoryViewModel(repository: outfits)
+                }
+                if profileViewModel == nil {
+                    profileViewModel = ProfileViewModel(
+                        wardrobeRepository: WardrobeRepository(apiClient: session.api),
+                        outfitsRepository: outfits
+                    )
                 }
             }
         }
@@ -69,15 +78,23 @@ struct MainTabsView: View {
                 TodayScreen(
                     viewModel: todayViewModel,
                     outfitsRepository: outfitsRepository,
-                    // A recorded wear/love/dismiss makes the History list
-                    // stale; its `.task` `load()` refetches on next entry.
-                    onOutfitRecorded: { historyViewModel?.markStale() }
+                    // A recorded wear/love/dismiss makes the History list and
+                    // the Profile stats (Worn/Streak) stale; each refetches on
+                    // next tab entry.
+                    onOutfitRecorded: {
+                        historyViewModel?.markStale()
+                        profileViewModel?.markStale()
+                    }
                 )
             }
 
         case .wardrobe:
             if let wardrobeViewModel {
-                WardrobeScreen(viewModel: wardrobeViewModel)
+                // A successful upload changes the Pieces stat.
+                WardrobeScreen(
+                    viewModel: wardrobeViewModel,
+                    onItemUploaded: { profileViewModel?.markStale() }
+                )
             }
 
         case .history:
@@ -86,24 +103,9 @@ struct MainTabsView: View {
             }
 
         case .profile:
-            profileStub
-        }
-    }
-
-    /// Temporary Profile tab: real profile ships in M5, but logout must work
-    /// now so the register → logout → login loop stays testable end-to-end.
-    private var profileStub: some View {
-        VStack(spacing: 28) {
-            MonoLabel("PROFILE — M5", size: 12)
-            AttreqPrimaryButton("Log out", isLoading: isLoggingOut) {
-                guard !isLoggingOut else { return }
-                isLoggingOut = true
-                Task {
-                    await session.logout()
-                    isLoggingOut = false
-                }
+            if let profileViewModel {
+                ProfileScreen(viewModel: profileViewModel)
             }
-            .padding(.horizontal, 64)
         }
     }
 }

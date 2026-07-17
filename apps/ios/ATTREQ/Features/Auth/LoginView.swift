@@ -54,9 +54,14 @@ struct LoginView: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 hairline
+                // `layoutPriority` (instead of `fixedSize`) keeps the label
+                // whole ahead of the flexible hairlines but still bounded by
+                // the screen; `minimumScaleFactor` absorbs XL Dynamic Type
+                // instead of overflowing the edges.
                 MonoLabel("Est. 2026 — Personal Styling")
                     .lineLimit(1)
-                    .fixedSize()
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
                 hairline
             }
             .padding(.bottom, 24)
@@ -66,6 +71,9 @@ struct LoginView: View {
                 .tracking(9)
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
+                // Scale down rather than truncate the wordmark at XL
+                // Dynamic Type / narrow widths.
+                .minimumScaleFactor(0.7)
                 .padding(.bottom, 14)
 
             Text("Your closet, curated.")

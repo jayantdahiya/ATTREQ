@@ -21,6 +21,7 @@ struct StyleDnaProfileView: View {
     @State private var viewModel: StyleDnaProfileViewModel?
     @State private var showRegenerateConfirm = false
     @State private var showDeletePhotosConfirm = false
+    @State private var showEditSheet = false
 
     /// `viewModel` is normally built on first appearance from the session's
     /// API client (same pattern as `MainTabsView`); previews inject one.
@@ -137,7 +138,7 @@ struct StyleDnaProfileView: View {
             Spacer()
             MonoLabel("Something went wrong", size: 11, color: Theme.clay)
             errorBanner(message)
-            AttreqPrimaryButton("Try Again") {
+            AttreqPrimaryButton("Try again") {
                 Task { await viewModel.load() }
             }
             .padding(.horizontal, 36)
@@ -148,14 +149,14 @@ struct StyleDnaProfileView: View {
 
     /// No Style DNA yet (mirrors RN's `!data?.style_dna` branch). The
     /// regenerate CTA only renders with >= 3 stored seed photos — the backend
-    /// 422s regenerate below that, and this screen has no photo upload until
-    /// the Profile wiring lands in M5.
+    /// 422s regenerate below that, and this screen deliberately has no photo
+    /// upload: seed photos come from the Style DNA onboarding flow.
     private func emptyState(_ viewModel: StyleDnaProfileViewModel, photos: [StyleDnaPhoto]) -> some View {
         VStack(spacing: 12) {
             Spacer()
             MonoLabel("No Style DNA yet", size: 11)
             BodyText(
-                "No Style DNA profile yet. Upload some outfit photos to get started — we'll read your aesthetic and build your profile.",
+                "We'll read your aesthetic from your outfit photos and build your style profile here.",
                 size: 13
             )
             .multilineTextAlignment(.center)
@@ -175,7 +176,7 @@ struct StyleDnaProfileView: View {
                 MonoLabel("Regenerate needs 3+ stored photos", size: 9)
                     .padding(.top, 12)
                 BodyText(
-                    "Photo upload returns here with the Profile wiring in M5. Until then, Style DNA is built from the photos you add during onboarding.",
+                    "Style DNA is built from the outfit photos you add during onboarding.",
                     size: 12
                 )
                 .multilineTextAlignment(.center)
@@ -220,6 +221,11 @@ struct StyleDnaProfileView: View {
             .padding(.bottom, 40)
         }
         .refreshable { await viewModel.load() }
+        // Correction sheet (M5-WP2) — only reachable from the DNA card's
+        // "Edit" affordance, so `dna` is always present here.
+        .sheet(isPresented: $showEditSheet) {
+            StyleDnaEditSheet(viewModel: viewModel, dna: dna)
+        }
     }
 
     /// Serif display headline in the artboard-09 voice
@@ -239,6 +245,8 @@ struct StyleDnaProfileView: View {
 
     private func dnaCard(_ dna: StyleDna) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            dnaCardHeader
+            hairline
             aestheticSection(dna.aesthetic)
             hairline
             paletteSection(dna.colorPalette)
@@ -258,6 +266,29 @@ struct StyleDnaProfileView: View {
         Rectangle()
             .fill(Theme.borderSoft)
             .frame(height: 1)
+    }
+
+    /// Card header row: mono title + accent "Edit" affordance opening the
+    /// correction sheet (M5-WP2). Rendered only inside `dnaCard`, i.e. only
+    /// when `styleDna != nil`.
+    private var dnaCardHeader: some View {
+        HStack {
+            MonoLabel("Your DNA")
+            Spacer()
+            Button {
+                showEditSheet = true
+            } label: {
+                MonoLabel("Edit", color: Theme.accent)
+                    // Grow the tappable area without moving the card layout
+                    // (same technique as AttreqChip).
+                    .padding(10)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(-10)
+            .accessibilityLabel("Edit Style DNA")
+            .accessibilityIdentifier("link-edit-dna")
+        }
     }
 
     private func aestheticSection(_ aesthetic: StyleDnaAesthetic) -> some View {

@@ -182,6 +182,10 @@ final class AppSession {
             logger.info("logout: POST /auth/logout failed (best-effort): \(String(describing: error))")
         }
         await authSession.clear()
+        // Privacy: the daily-reminder flag lives in device-global UserDefaults,
+        // so clear it on sign-out — otherwise the next account on a shared
+        // device inherits the reminder and its ON toggle state.
+        ReminderScheduler().disable()
         authState = .loggedOut
     }
 

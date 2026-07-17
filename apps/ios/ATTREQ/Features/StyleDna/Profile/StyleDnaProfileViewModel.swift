@@ -29,6 +29,11 @@ final class StyleDnaProfileViewModel {
     private(set) var state: LoadState = .loading
     private(set) var isRegenerating = false
     private(set) var isDeletingPhotos = false
+    /// Correction PATCH in flight (edit sheet's save button spinner).
+    private(set) var isSaving = false
+    /// Correction save failure, surfaced inline inside the edit sheet (the
+    /// sheet stays open). Cleared when the sheet (re)appears or a new save starts.
+    private(set) var saveError: String?
     /// Non-fatal action failure (regenerate / delete) shown as a banner over
     /// otherwise-valid content. Cleared on the next action or successful load.
     private(set) var actionError: String?
@@ -95,6 +100,32 @@ final class StyleDnaProfileViewModel {
         } catch {
             actionError = Self.message(for: error, fallback: "Couldn't remove your photos.")
         }
+    }
+
+    /// `PATCH /users/style-dna` — apply manual corrections from the edit
+    /// sheet (M5-WP2). `corrections` keys must be the backend's snake_case
+    /// form (`"aesthetic"`, `"formality_bias"`, …); the server deep-merges
+    /// the partial dict into the stored profile, so only changed subtrees
+    /// should be sent (stored confidences survive untouched). The response
+    /// echoes the full updated profile, which replaces local state — on
+    /// failure the previous state is kept and `saveError` carries the message
+    /// for the sheet's inline banner.
+    func applyCorrections(_ corrections: [String: JSONValue]) async {
+        guard !isSaving else { return }
+        isSaving = true
+        saveError = nil
+        defer { isSaving = false }
+        do {
+            state = .loaded(try await repository.correct(corrections))
+        } catch {
+            saveError = Self.message(for: error, fallback: "Couldn't save your changes.")
+        }
+    }
+
+    /// Clears a stale `saveError` (called when the edit sheet reappears so a
+    /// previous attempt's failure doesn't flash before the user acts).
+    func clearSaveError() {
+        saveError = nil
     }
 
     // MARK: - Errors

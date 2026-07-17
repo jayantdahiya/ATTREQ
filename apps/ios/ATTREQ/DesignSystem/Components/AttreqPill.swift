@@ -28,6 +28,9 @@ struct AttreqPill: View {
 
     private var background: Color {
         switch variant {
+        // Literal by design: the handoff hardcodes `rgba(128,120,112,0.10)`
+        // for the muted tint in BOTH appearances (it's not in the C/DARK_C
+        // token maps), so this deliberately bypasses the asset catalog.
         case .muted: Color(red: 128 / 255, green: 120 / 255, blue: 112 / 255).opacity(0.10)
         case .gold: Theme.accentSoft
         case .moss: Theme.mossSoft

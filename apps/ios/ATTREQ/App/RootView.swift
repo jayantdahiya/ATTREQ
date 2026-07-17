@@ -20,7 +20,8 @@ struct RootView: View {
 
     /// `-screen <name>` jumps straight to one screen for design audits:
     /// `register-account` / `register-style` / `register-location` /
-    /// `wardrobe` / `today` / `history` / `style-dna-upload` / `style-dna`.
+    /// `wardrobe` / `today` / `history` / `profile` / `style-dna-upload` /
+    /// `style-dna`.
     private var auditScreen: String? {
         let args = ProcessInfo.processInfo.arguments
         guard let index = args.firstIndex(of: "-screen"), args.indices.contains(index + 1) else { return nil }
@@ -31,7 +32,10 @@ struct RootView: View {
         if isGalleryMode {
             ComponentGalleryView()
         } else if let auditScreen {
+            // Bootstrap here too so audit screenshots show the real
+            // last-signed-in user (identity, stats) instead of fallbacks.
             auditDestination(auditScreen)
+                .task { await session.bootstrap() }
         } else {
             gate
                 .task { await session.bootstrap() }
@@ -47,6 +51,7 @@ struct RootView: View {
         case "wardrobe": MainTabsView(initialTab: .wardrobe)
         case "today": MainTabsView(initialTab: .today)
         case "history": MainTabsView(initialTab: .history)
+        case "profile": MainTabsView(initialTab: .profile)
         case "style-dna-upload": OnboardingFlowView()
         case "style-dna": StyleDnaProfileView()
         default: LoginView()

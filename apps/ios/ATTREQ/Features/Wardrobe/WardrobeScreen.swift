@@ -13,6 +13,9 @@ import SwiftUI
 struct WardrobeScreen: View {
     /// Owned by `MainTabsView` so state survives tab switches.
     let viewModel: WardrobeViewModel
+    /// Fired after a successful upload so the tab shell can invalidate the
+    /// Profile Pieces stat.
+    var onItemUploaded: (() -> Void)?
 
     @State private var showCamera = false
     @State private var showLibrary = false
@@ -67,13 +70,13 @@ struct WardrobeScreen: View {
                         ImageProcessor.jpegDataForUpload(image)
                     }.value
                     guard let data else { return }
-                    await viewModel.upload(imageData: data)
+                    if await viewModel.upload(imageData: data) { onItemUploaded?() }
                 }
             }
             .ignoresSafeArea()
         }
         .photoLibraryPicker(isPresented: $showLibrary) { data in
-            Task { await viewModel.upload(imageData: data) }
+            Task { if await viewModel.upload(imageData: data) { onItemUploaded?() } }
         }
     }
 
@@ -88,12 +91,15 @@ struct WardrobeScreen: View {
                     .foregroundStyle(Theme.text)
             }
             Spacer()
-            // Inert for now — search ships post-M2.
+            // Decorative search circle per artboard 06 — deliberately inert
+            // (no search exists in the native port), so it's hidden from
+            // assistive tech to avoid announcing a non-functional control.
             Circle()
                 .strokeBorder(Theme.border, lineWidth: 1)
                 .frame(width: 34, height: 34)
                 .overlay(AttreqIcon.search.view(size: 14, color: Theme.t2))
                 .padding(.top, 16)
+                .accessibilityHidden(true)
         }
         .padding(.bottom, 3)
     }
@@ -157,8 +163,9 @@ struct WardrobeScreen: View {
                 // same upload path the picker callback uses.
                 if ProcessInfo.processInfo.arguments.contains("-uitest-autopick-photo") {
                     Task {
-                        if let data = Self.syntheticTestPhotoJPEG() {
-                            await viewModel.upload(imageData: data)
+                        if let data = Self.syntheticTestPhotoJPEG(),
+                           await viewModel.upload(imageData: data) {
+                            onItemUploaded?()
                         }
                     }
                 } else {

@@ -244,8 +244,11 @@ final class WardrobeViewModel {
 
     /// Uploads a JPEG (the photo pipeline always JPEG-encodes), refetches the
     /// list so the new pending item appears, and starts status polling.
-    func upload(imageData: Data) async {
-        guard !isUploading else { return }
+    /// Uploads an image; returns `true` on a successful upload so the screen
+    /// can notify the tab shell (which invalidates the Profile Pieces stat).
+    @discardableResult
+    func upload(imageData: Data) async -> Bool {
+        guard !isUploading else { return false }
         isUploading = true
         defer { isUploading = false }
         do {
@@ -263,8 +266,10 @@ final class WardrobeViewModel {
             // instead of inheriting an old loop's near-expired 90s cap.
             stopPolling()
             startPollingIfNeeded()
+            return true
         } catch {
             errorMessage = Self.message(for: error, fallback: "Upload failed. Please try again.")
+            return false
         }
     }
 

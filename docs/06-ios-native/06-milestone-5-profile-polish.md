@@ -1,6 +1,6 @@
 # M5 — Profile, Polish & Design Audit
 
-> **Status:** Planned (written 2026-07-15; starts after M4 commit)
+> **Status:** ✅ Complete (2026-07-17). Profile (artboard 08, real stats) + Style DNA correction UI + app-wide polish sweep + full design audit done; 117 unit + 4 E2E UI tests green; every screen verified light+dark (audit table below). Review fixed: style_preferences row/sheet no longer render the DNA JSON blob (column is DNA-owned — `StylePreferencesValue`), reminder toggle race (action token + busy-disable), Settings-revocation reconciliation on appear, reminder cleared on sign-out (shared-device privacy), Profile stats refetch after wear/upload (markStale). Correction-UI fix from its own review: smart-casual formality level 1.5 (backend anchors), not 2.0 (business).
 > **Parent:** [`00-goal.md`](00-goal.md). Environment: [`01-milestone-0-scaffold.md`](01-milestone-0-scaffold.md).
 
 ## Objective
@@ -31,7 +31,18 @@ The last feature milestone: Profile screen (artboard 08) with real data, the def
 
 ## Audit table
 
-(filled during WP4)
+Captured 2026-07-17 via audit routes on iPhone 17 Pro (screenshots in the session scratchpad; all authenticated screens captured with a live signed-in session — note: capture login LAST or via `-screen login`, since `-reset-auth` clears the keychain for subsequent captures).
 
-| Artboard | Light | Dark | Notes |
+| Screen (artboard) | Light | Dark | Notes |
 |---|---|---|---|
+| Design gallery (tokens) | ✅ M0 | ✅ M0 | 6 review fixes applied at M0 |
+| 01 Login | ✅ | ✅ | brand row scales at XL type (sweep fix); "Forgot password" inert per goal doc |
+| 02–04 Register wizard | ✅ | ✅ | M1-verified; focus chains added post-review |
+| 05 Today | ✅ | ✅ | real suggestion data; weather strip degrades keylessly |
+| 06 Wardrobe | ✅ | ✅ | real upload data incl. backend-processed image |
+| 07 History | ✅ | ✅ | real worn entry, moss pill |
+| 08 Profile | ✅ | ✅ | real stats (2/1/1d); reminder sub-copy "every day" vs mock "weekdays" (deliberate) |
+| 09 Style DNA upload | ✅ | ✅ | M3-verified |
+| Style DNA profile/results/review (no artboards) | ✅ | ✅ | composed in design language; correction sheet added M5 |
+
+Known divergences (all deliberate, documented in milestone docs): worn dates use local calendar day (RN uses UTC slice); smart-casual formality level 1.5 (backend anchors); reminder is daily (spec) vs mock's "weekdays" sub-copy; icons are fixed-metric SF Symbol approximations of the feather set.
