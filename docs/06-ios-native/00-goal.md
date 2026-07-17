@@ -1,6 +1,6 @@
 # Native iOS App (Swift) — Goal & Execution Plan
 
-> **Status:** Active goal (created 2026-07-15, updated 2026-07-15 to adopt the Redesign v2 handoff)
+> **Status:** ✅ COMPLETE (M0–M5 shipped, 2026-07-15 → 2026-07-17). Native SwiftUI app on branch `ios-native` at `apps/ios/`. See the completion summary at the bottom of this file.
 > **Audience:** Any LLM or developer executing a milestone. Read this file + the single milestone file you are executing. Milestone files (`01-…` onward) are written when a milestone starts and must be self-contained.
 > **Relationship to other docs:** This is a separate track from the beta-launch roadmap in `docs/05-roadmap/` (which targets the React Native client). Nothing here modifies `apps/mobile/` or the backend.
 
@@ -158,3 +158,27 @@ Order rationale: wardrobe (M2) before onboarding (M3) because review-items reuse
 2. Boot the app on the iPhone 17 Pro simulator (`xcrun simctl`); drive the milestone's flows manually against the local backend.
 3. Screenshot evidence in **both appearances**: `xcrun simctl io booted screenshot` with the simulator toggled light/dark (`xcrun simctl ui booted appearance dark`); compare against the design jsx specs (dimensions/colors/spacing are in the source — the artboards are 390×844, i.e., exactly the iPhone-13/14-class point grid).
 4. RN app and backend test suites remain untouched and green.
+
+## Completion summary (2026-07-17)
+
+All six milestones shipped on branch `ios-native`, committed per milestone (M0…M5). The app builds and runs on the iPhone 17 Pro simulator; **117 unit tests + 4 end-to-end XCUITest flows** pass against the live local backend, and every screen was screenshot-audited in light and dark against the Redesign v2 artboards (audit table in `06-milestone-5-profile-polish.md`).
+
+**Exit criteria (from "Done means") — all met:**
+- Register (3-step wizard), login, logout, transparent 401 refresh, Keychain persistence — E2E tested (`AuthFlowUITests`).
+- Style DNA onboarding (upload → results → review → complete) incl. skip and keyless-degraded paths — E2E tested (`OnboardingFlowUITests`); Style DNA profile view + correction UI shipped.
+- Wardrobe browse + camera/library upload + processing-status polling — E2E tested (`WardrobeFlowUITests`).
+- Daily weather-aware recommendations + Wear/Skip/feedback; worn outfits appear in History grouped by local day — E2E tested (`TodayFlowUITests`).
+- Profile with live stats, location editing, daily-reminder local notification, Style DNA entry, sign out.
+- Every screen matches the artboards in both themes (design audit).
+
+**Architecture:** SwiftUI, iOS 17, Swift 6 strict concurrency, MVVM-lite (`@Observable` VMs + repositories), URLSession + actor-based `AuthSession`, Keychain, bundled fonts + semantic color assets, **zero third-party dependencies**. Path-scoped `ios-ci.yml` builds + tests on macOS. `apps/mobile/` and the backend were never modified.
+
+**Known gaps / deliberate divergences (all documented in milestone docs):**
+- Backend `PUT /users/me` ignores `style_preferences` (the column is DNA-owned) — chip-preference edits are device-local only. Backend-side change needed for server persistence; out of scope (no backend changes).
+- Clothing classification (`GROQ_API_KEY`) and real weather (`OPENWEATHER_API_KEY`) require keys in `apps/api/.env`; without them the app runs in verified degraded modes (uploads still land; default weather; onboarding skips).
+- Category taxonomy is free-text/substring-slotted on the backend (tracked in `docs/05-roadmap/` M2); iOS filters/recommendation-pairing mirror that.
+- Worn dates use the **local** calendar day (RN uses a UTC slice) — deliberate diary semantics.
+- Per-photo Style DNA delete is "remove all" (backend has no per-photo endpoint); "Forgot password" is inert (no backend endpoint).
+- Icons are fixed-metric SF Symbol approximations of the handoff's feather set.
+
+**Not in scope (never was):** remote push notifications, Android, App Store/TestFlight distribution (belongs to `docs/05-roadmap/` M5).
