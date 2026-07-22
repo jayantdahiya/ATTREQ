@@ -3,7 +3,7 @@
 import uuid
 
 from sqlalchemy import Boolean, Column, DateTime, Float, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -48,6 +48,14 @@ class User(Base):
 
     # Style DNA
     style_preferences = Column(Text, nullable=True)  # JSON string — synthesized Style DNA profile
+
+    # RI-6: FashionCLIP style centroid — {"vector": [512 floats, UNNORMALIZED
+    # running mean], "n_items": int, "updated_at": iso str}. Kept out of the
+    # `style_preferences` blob to avoid round-trip-parsing 512 floats on every
+    # Style DNA read. Updated online from "liked"/"worn" signals only (see
+    # services/style_dna/scoring.py::update_style_dna_centroid); normalized
+    # only at scoring time (services/recommendation/similarity.py::centroid_score).
+    style_dna_centroid = Column(JSONB, nullable=True)
 
     # Onboarding state — steps: pending | style_dna_upload | review | complete
     onboarding_completed = Column(Boolean, default=False, nullable=False)

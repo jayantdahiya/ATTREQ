@@ -1,5 +1,6 @@
 """Outfit management endpoints for ATTREQ API."""
 
+import asyncio
 import logging
 import math
 from uuid import UUID
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from attreq_api.api.v1.deps import get_current_active_user
 from attreq_api.config.database import get_db
+from attreq_api.config.settings import settings
 from attreq_api.crud.outfit import outfit_crud
 from attreq_api.crud.user_event import user_event_crud
 from attreq_api.crud.wardrobe import wardrobe_crud
@@ -20,10 +22,38 @@ from attreq_api.schemas.outfit import (
     OutfitResponse,
     OutfitWear,
 )
+from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _update_style_dna_centroid_for_outfit(
+    db: AsyncSession, user_id: UUID, outfit, signal: str
+) -> None:
+    """RI-6: fetch each core item's FashionCLIP vector and fold it into the
+    user's style centroid. `signal` must be "liked" or "worn" — positive
+    only (see `services.style_dna.scoring.update_style_dna_centroid`).
+    No-op (not even a Weaviate call) when `EMBEDDINGS_ENABLED` is false, so
+    this is a true no-op on the default-off path. Best-effort: any failure
+    (missing vector, Weaviate down) is logged and swallowed, never raised
+    into the wear/feedback flow.
+    """
+    if not settings.embeddings_enabled:
+        return
+
+    from attreq_api.services.ai.embeddings import weaviate_service
+    from attreq_api.services.style_dna.scoring import update_style_dna_centroid
+
+    item_ids = [i for i in (outfit.top_item_id, outfit.bottom_item_id) if i is not None]
+    for item_id in item_ids:
+        try:
+            vector = await asyncio.to_thread(weaviate_service.get_vector, item_id)
+            if vector is not None:
+                await update_style_dna_centroid(db, user_id, vector, signal=signal)
+        except Exception as e:
+            logger.warning(f"Failed to update style DNA centroid for item {item_id}: {e}")
 
 
 @router.post("", response_model=OutfitResponse, status_code=status.HTTP_201_CREATED)
@@ -287,6 +317,9 @@ async def mark_outfit_worn(
     except Exception as e:
         logger.warning(f"Failed to update color affinity for worn outfit: {e}")
 
+    # RI-6: update the FashionCLIP style centroid from the same worn signal.
+    await _update_style_dna_centroid_for_outfit(db, current_user.id, outfit, signal="worn")
+
     return OutfitResponse.model_validate(updated_outfit)
 
 
@@ -351,6 +384,22 @@ async def submit_outfit_feedback(
             await update_color_affinity(db, current_user.id, outfit_id, signal=signal)
         except Exception as e:
             logger.warning(f"Failed to update color affinity for feedback: {e}")
+
+        # RI-6: centroid updates only on the positive signal — dislikes are
+        # handled by thumbs-propagation, not by pulling the centroid away
+        # from a disliked item (see services/style_dna/scoring.py).
+        if signal == "liked":
+            await _update_style_dna_centroid_for_outfit(db, current_user.id, outfit, signal="liked")
+
+        # RI-6 (finalized plan §4, exit-criterion enabler): a dislike must be
+        # reflected in the NEXT `/recommendations/daily` call, not after the
+        # 24h cache TTL — thumbs-propagation only ever runs on a fresh
+        # generation. Best-effort, never blocks the feedback response.
+        if signal == "disliked":
+            try:
+                await invalidate_daily_suggestions(current_user.id)
+            except Exception as e:
+                logger.warning(f"Failed to invalidate daily-suggestions cache for feedback: {e}")
 
     return OutfitResponse.model_validate(updated_outfit)
 

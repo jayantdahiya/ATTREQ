@@ -5,6 +5,7 @@ import logging
 from uuid import UUID
 
 from attreq_api.config.database import AsyncSessionLocal
+from attreq_api.config.settings import settings
 from attreq_api.crud.wardrobe import wardrobe_crud
 from attreq_api.crud.wardrobe_photo import wardrobe_photo_crud
 from attreq_api.services.ai.background_removal import (
@@ -14,6 +15,7 @@ from attreq_api.services.ai.background_removal import (
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
 from attreq_api.services.ai.color_extraction import extract_palette_safe
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.ai.fashion_embeddings import fashion_embeddings_service
 from attreq_api.services.ai.schema_mapper import build_wardrobe_update_payload
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
@@ -29,7 +31,12 @@ async def process_wardrobe_image(
     1. Update status to "processing"
     2. Remove background + generate thumbnail (shared, storage-agnostic helper)
     3. Detect clothing attributes with the configured LLM classifier
+    3b. RI-6: compute a FashionCLIP image embedding (only if EMBEDDINGS_ENABLED)
+        — MUST happen before the temp-dir cleanup below, while
+        `classification_path` still exists on disk.
     4. Add to Weaviate for vector search
+    4b. RI-6: upsert the FashionCLIP vector + near-duplicate check (uses the
+        vector computed in 3b, no file needed — safe to run after cleanup)
     5. Update database with results
     6. Invalidate the wardrobe-stats cache
     7. Set status to "completed" or "failed"
@@ -106,6 +113,25 @@ async def process_wardrobe_image(
                     palette, color_extraction_source = None, "llm_fallback"
                 else:
                     palette, color_extraction_source = palette_outcome
+
+                # Step 3b: FashionCLIP embedding (RI-6) — MUST be computed here,
+                # inside the `try`, while `classification_path` still exists.
+                # The real fix for the confirmed temp-dir-scoping bug: the old
+                # code computed/used Weaviate state only after
+                # `cleanup_classification_tempdir` ran in `finally` below, by
+                # which point the file is gone. Best-effort: never raises,
+                # embedding failure must not fail the whole pipeline. Embeds
+                # even when background removal failed (classification_path ==
+                # original_tmp) — a noisier vector beats a coverage gap
+                # correlated with BG-removal failures.
+                item_vector: list[float] | None = None
+                if settings.embeddings_enabled:
+                    try:
+                        item_vector = await asyncio.to_thread(
+                            fashion_embeddings_service.embed_image, classification_path
+                        )
+                    except Exception as e:
+                        logger.warning(f"FashionCLIP embed failed for item {item_id}: {str(e)}")
             finally:
                 cleanup_classification_tempdir(classification_path)
 
@@ -129,6 +155,37 @@ async def process_wardrobe_image(
             except Exception as e:
                 logger.error(f"Failed to add item {item_id} to Weaviate: {str(e)}")
 
+            # Step 4b: upsert the FashionCLIP vector + near-duplicate check
+            # (RI-6). Uses the vector computed in 3b — no file access needed,
+            # so this is safe to run after the temp-dir cleanup above.
+            possible_duplicate_of = None
+            if item_vector is not None and weaviate_service.is_connected():
+                try:
+                    weaviate_service.init_vector_schema()
+                    # Near-dup check BEFORE upsert so this item never matches
+                    # itself. Only matches already-stored (completed) vectors
+                    # of the same user — two near-identical images uploaded
+                    # concurrently may miss each other (accepted v1 limitation).
+                    dup_neighbors = weaviate_service.query_neighbors(
+                        vector=item_vector,
+                        user_id=user_id,
+                        k=1,
+                        min_sim=0.97,
+                        exclude_item_id=item_id,
+                    )
+                    weaviate_service.upsert_vector(
+                        item_id=item_id,
+                        user_id=user_id,
+                        category=detection_result.get("category"),
+                        vector=item_vector,
+                    )
+                    if dup_neighbors:
+                        possible_duplicate_of = dup_neighbors[0][0]
+                except Exception as e:
+                    logger.warning(
+                        f"FashionCLIP vector upsert/dup-check failed for item {item_id}: {str(e)}"
+                    )
+
             update_data = build_wardrobe_update_payload(
                 detection_result=detection_result,
                 palette=palette,
@@ -136,6 +193,8 @@ async def process_wardrobe_image(
                 processed_image_url=processed_image_url,
                 thumbnail_url=thumbnail_url,
             )
+            if possible_duplicate_of is not None:
+                update_data["possible_duplicate_of"] = possible_duplicate_of
 
             await wardrobe_crud.update(db, item_id, update_data)
             logger.info(f"Item {item_id} processing completed successfully")

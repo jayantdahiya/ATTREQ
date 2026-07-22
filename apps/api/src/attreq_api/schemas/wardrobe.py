@@ -179,6 +179,15 @@ class WardrobeItemResponse(WardrobeItemBase):
     attribute_confidence: dict[str, float] | None = None
     schema_version: int = 1
 
+    # RI-6: near-duplicate detection is async (upload returns before the
+    # embedding exists), so the warning is a stored field surfaced via this
+    # GET response rather than the upload response. `None` when no
+    # near-duplicate (>= 0.97 cosine similarity) was found, embeddings are
+    # disabled, or the item hasn't finished processing yet.
+    possible_duplicate_of: UUID | None = None
+    needs_review: bool = False
+    review_reason: str | None = None
+
     class Config:
         from_attributes = True
 

@@ -1,5 +1,6 @@
 """Recommendation algorithm for outfit generation."""
 
+import asyncio
 import json
 import logging
 from datetime import date, datetime, timedelta
@@ -9,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from attreq_api.config.settings import settings
 from attreq_api.models.outfit import Outfit
 from attreq_api.models.user import User
 from attreq_api.models.wardrobe import WardrobeItem
@@ -22,6 +24,46 @@ from attreq_api.services.recommendation.color_harmony import (
 from attreq_api.services.recommendation.legacy_color_lab import legacy_palette_for_item
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# RI-6: FashionCLIP item-vector / centroid / propagation loading
+# ============================================================================
+
+
+async def _load_item_vectors(items: list[WardrobeItem]) -> dict[UUID, list[float]]:
+    """Best-effort batch fetch of stored FashionCLIP vectors for scoring.
+
+    One `get_vector` call per item via `asyncio.to_thread` (the weaviate-client
+    v4 sync client is not awaitable) — soft-fails per item; only called when
+    `settings.embeddings_enabled` is True (see caller in
+    `generate_daily_outfits`), so this never runs on the default-off path.
+    """
+    if not items or not weaviate_service.is_connected():
+        return {}
+
+    async def _fetch(item: WardrobeItem) -> tuple[UUID, list[float] | None]:
+        try:
+            vector = await asyncio.to_thread(weaviate_service.get_vector, item.id)
+            return item.id, vector
+        except Exception as e:
+            logger.warning(f"Failed to fetch vector for item {item.id}: {e}")
+            return item.id, None
+
+    results = await asyncio.gather(*(_fetch(item) for item in items))
+    return {item_id: vector for item_id, vector in results if vector is not None}
+
+
+async def _load_propagation_penalties(db: AsyncSession, user_id: UUID) -> dict[UUID, float]:
+    """Best-effort thumbs-propagation penalties for this generation call —
+    only called when `settings.embeddings_enabled` is True (see caller)."""
+    try:
+        from attreq_api.services.recommendation.similarity import compute_propagation_penalties
+
+        return await compute_propagation_penalties(db, user_id)
+    except Exception as e:
+        logger.warning(f"Propagation penalty computation failed for user {user_id}: {e}")
+        return {}
 
 
 # ============================================================================
@@ -528,6 +570,7 @@ async def generate_daily_outfits(
     occasion: str = "casual",
     num_suggestions: int = 3,
     now: datetime | None = None,
+    pool_size: int | None = None,
 ) -> list[dict[str, Any]]:
     """Generate daily outfit suggestions using all recommendation functions.
 
@@ -554,11 +597,17 @@ async def generate_daily_outfits(
             (defaults to `datetime.now()` inside `calculate_context_score`
             when omitted). Not threaded to the endpoint — production calls
             always use the real current time.
+        pool_size: RI-6 re-ranker hook — when set, generates this many
+            diverse candidates instead of `num_suggestions` (the endpoint
+            reranks the larger pool, then slices to the display count).
+            Defaults to `num_suggestions` when omitted, so existing callers
+            are unaffected.
 
     Returns:
         List of outfit suggestions with scores and metadata
     """
-    logger.info(f"Generating {num_suggestions} outfit suggestions for user {user_id}")
+    effective_k = pool_size if pool_size is not None else num_suggestions
+    logger.info(f"Generating {effective_k} outfit suggestions for user {user_id}")
 
     # Step 1: Get user's wardrobe items (active only — archived items must
     # never surface in recommendations)
@@ -612,6 +661,22 @@ async def generate_daily_outfits(
     # a wider raw window here does not loosen anti-repetition.
     shown_events = await _load_recent_shown_events(db, user_id, days=90)
 
+    # Step 6b (RI-6): FashionCLIP item vectors / style centroid / thumbs-
+    # propagation penalties — ONLY loaded when the feature is enabled, and
+    # left as `None` otherwise so `composition.py` takes its exact pre-RI-6
+    # code path (no weight reallocation, no propagation adjustment) when
+    # `EMBEDDINGS_ENABLED=false`, the shipped default.
+    item_vectors: dict[UUID, list[float]] | None = None
+    user_centroid: list[float] | None = None
+    propagation_penalties: dict[UUID, float] | None = None
+    if settings.embeddings_enabled:
+        item_vectors = await _load_item_vectors(occasion_filtered)
+        if user_obj and user_obj.style_dna_centroid:
+            raw_vector = user_obj.style_dna_centroid.get("vector")
+            if raw_vector:
+                user_centroid = raw_vector
+        propagation_penalties = await _load_propagation_penalties(db, user_id)
+
     # Step 7: Delegate to the PURE composition core (no DB access below this
     # line) — see services/recommendation/composition.py.
     from attreq_api.services.recommendation.composition import compose_daily_outfits
@@ -623,9 +688,12 @@ async def generate_daily_outfits(
         recently_worn,
         shown_events,
         style_dna,
-        k=num_suggestions,
+        k=effective_k,
         now=now,
         preferred_colors=user_preferences.get("preferred_colors"),
+        item_vectors=item_vectors,
+        user_centroid=user_centroid,
+        propagation_penalties=propagation_penalties,
     )
 
     suggestions = [_candidate_to_payload(c) for c in candidates]

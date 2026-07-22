@@ -353,10 +353,17 @@ def _base_compatibility(
     occasion: str,
     style_dna: dict[str, Any] | None,
     now: datetime | None,
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
 ) -> tuple[float, dict[str, float], str]:
-    """Weighted color/context/style_dna/behaviour blend — identical weighting
-    to the pre-RI-4 `generate_daily_outfits` (RI-3 context score occupies the
-    old formality slot). Returns `(base_compatibility, components, branch)`.
+    """Weighted color/context/style_dna/behaviour(/centroid) blend — identical
+    weighting to the pre-RI-4 `generate_daily_outfits` (RI-3 context score
+    occupies the old formality slot) UNLESS RI-6's FashionCLIP centroid is
+    active (`item_vectors is not None or user_centroid is not None`), in
+    which case a hand-tuned 0.10 weight is carved out for it — taken from
+    `style_dna` when Style DNA is present, split evenly between
+    color/context otherwise. Provisional, superseded by RI-5's fitted
+    weights. Returns `(base_compatibility, components, branch)`.
     `components` never includes `preference_bonus` — that stays a separate
     additive term (section 5.5) so `base_compatibility` is purely the
     positive compatibility signal the confidence hedge keys off of.
@@ -403,17 +410,45 @@ def _base_compatibility(
 
     context_score, context_detail = calculate_context_score(core_items, occasion, weather, now=now)
 
+    # RI-6: centroid is "active" only when the caller (algorithm.py, gated by
+    # settings.embeddings_enabled) actually threaded non-None data through —
+    # so EMBEDDINGS_ENABLED=false takes the exact pre-RI-6 branches below,
+    # unchanged. `centroid_score` itself defaults to a neutral 0.5 when a
+    # given item has no stored vector yet, even while active.
+    from attreq_api.services.recommendation.similarity import centroid_score as _centroid_score
+
+    centroid_active = item_vectors is not None or user_centroid is not None
+    centroid_component = 0.5
+    if centroid_active:
+        item_vectors = item_vectors or {}
+        per_item = [
+            _centroid_score(item_vectors.get(item.id), user_centroid) for item in core_items
+        ]
+        if per_item:
+            centroid_component = sum(per_item) / len(per_item)
+
     style_dna_score = 0.0
     behaviour_score = 0.0
     if style_dna:
         style_dna_score = calculate_style_dna_score(core_items, style_dna)
         behaviour_score = calculate_behaviour_score(core_items, style_dna.get("behaviour_weights", {}))
-        base = (
-            color_score * 0.20
-            + context_score * 0.20
-            + style_dna_score * 0.40
-            + behaviour_score * 0.20
-        )
+        if centroid_active:
+            base = (
+                color_score * 0.20
+                + context_score * 0.20
+                + style_dna_score * 0.30
+                + behaviour_score * 0.20
+                + centroid_component * 0.10
+            )
+        else:
+            base = (
+                color_score * 0.20
+                + context_score * 0.20
+                + style_dna_score * 0.40
+                + behaviour_score * 0.20
+            )
+    elif centroid_active:
+        base = color_score * 0.45 + context_score * 0.45 + centroid_component * 0.10
     else:
         base = color_score * 0.5 + context_score * 0.5
 
@@ -425,6 +460,7 @@ def _base_compatibility(
         "time_score": round(context_detail["time_score"], 4),
         "style_dna": round(style_dna_score, 4),
         "behaviour": round(behaviour_score, 4),
+        "centroid": round(centroid_component, 4) if centroid_active else None,
         "base_compatibility": round(base, 4),
     }
     return base, components, branch
@@ -528,6 +564,17 @@ def _accessory_pick(pool: list[WardrobeItem], rotation_ctx: RotationContext) -> 
     return min(pool, key=lambda a: (-item_decay_penalty(a.id, rotation_ctx), str(a.id)))
 
 
+def _propagation_adjustment(
+    core_items: list[WardrobeItem], propagation_penalties: dict[UUID, float] | None
+) -> float:
+    """Sum of each core item's already-clamped (+/-0.05) thumbs-propagation
+    adjustment (finalized plan §4) — e.g. a top+bottom outfit can see up to
+    +/-0.10 total, since the clamp is per-item, not per-outfit."""
+    if not propagation_penalties:
+        return 0.0
+    return round(sum(propagation_penalties.get(item.id, 0.0) for item in core_items), 4)
+
+
 def _build_candidate(
     *,
     top_item: WardrobeItem | None,
@@ -544,15 +591,21 @@ def _build_candidate(
     items_with_prior_events: set[UUID],
     today: date,
     now: datetime | None,
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
+    propagation_penalties: dict[UUID, float] | None = None,
 ) -> OutfitCandidate:
     core_items = [i for i in (top_item, bottom_item, fullbody_item) if i is not None]
 
-    base, components, branch = _base_compatibility(core_items, weather, occasion, style_dna, now)
+    base, components, branch = _base_compatibility(
+        core_items, weather, occasion, style_dna, now, item_vectors, user_centroid
+    )
     preference_bonus = _preference_bonus(core_items, preferred_colors)
     cold_start_bonus, rediscovery_bonus, best_redisc_id, best_redisc_bonus = _item_bonuses(
         core_items, warm_items=warm_items, items_with_prior_events=items_with_prior_events, today=today
     )
     rotation_penalty = _rotation_penalty(core_items, rotation_ctx)
+    propagation_adjustment = _propagation_adjustment(core_items, propagation_penalties)
 
     reference_so_far = list(core_items)
     footwear_item = None
@@ -567,13 +620,21 @@ def _build_candidate(
 
     accessory_item = _accessory_pick(pools.accessories, rotation_ctx)
 
-    total = base + preference_bonus * 0.2 + cold_start_bonus + rediscovery_bonus + rotation_penalty
+    total = (
+        base
+        + preference_bonus * 0.2
+        + cold_start_bonus
+        + rediscovery_bonus
+        + rotation_penalty
+        + propagation_adjustment
+    )
     total = max(0.0, min(1.0, total))
 
     components["preference_bonus"] = round(preference_bonus, 4)
     components["cold_start_bonus"] = round(cold_start_bonus, 4)
     components["rediscovery_bonus"] = round(rediscovery_bonus, 4)
     components["rotation_penalty"] = round(rotation_penalty, 4)
+    components["propagation_adjustment"] = propagation_adjustment if propagation_penalties is not None else None
     components["total"] = round(total, 4)
 
     return OutfitCandidate(
@@ -629,6 +690,9 @@ def _fill_bottom_for_anchor(
     now: datetime | None,
     allow_repeat: bool,
     used_bottom_ids: set[UUID],
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
+    propagation_penalties: dict[UUID, float] | None = None,
 ) -> OutfitCandidate | None:
     """Argmax-fill the bottom slot for a top anchor, HARD-excluding any
     bottom whose combo with this anchor is already in `rotation_ctx
@@ -660,6 +724,9 @@ def _fill_bottom_for_anchor(
                 items_with_prior_events=items_with_prior_events,
                 today=today,
                 now=now,
+                item_vectors=item_vectors,
+                user_centroid=user_centroid,
+                propagation_penalties=propagation_penalties,
             )
             if is_repeat:
                 penalty = combo_penalty(combo, rotation_ctx)
@@ -697,6 +764,9 @@ def _build_fullbody_candidate(
     today: date,
     now: datetime | None,
     allow_repeat: bool,
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
+    propagation_penalties: dict[UUID, float] | None = None,
 ) -> OutfitCandidate | None:
     combo = frozenset({anchor.id})
     is_repeat = combo_in_recent(combo, rotation_ctx)
@@ -718,6 +788,9 @@ def _build_fullbody_candidate(
         items_with_prior_events=items_with_prior_events,
         today=today,
         now=now,
+        item_vectors=item_vectors,
+        user_centroid=user_centroid,
+        propagation_penalties=propagation_penalties,
     )
     if is_repeat:
         penalty = combo_penalty(combo, rotation_ctx)
@@ -764,8 +837,20 @@ def generate_outfits(
     today: date | None = None,
     now: datetime | None = None,
     k: int = 3,
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
+    propagation_penalties: dict[UUID, float] | None = None,
 ) -> list[OutfitCandidate]:
-    """Anchor selection + greedy slot-fill, over already-built pools."""
+    """Anchor selection + greedy slot-fill, over already-built pools.
+
+    `item_vectors`/`user_centroid`/`propagation_penalties` are RI-6 hooks —
+    all default `None`, which is the exact pre-RI-6 code path in
+    `_base_compatibility`/`_build_candidate` (no weight reallocation, no
+    propagation adjustment). Callers that want the FashionCLIP centroid/
+    thumbs-propagation to participate in scoring must pass non-`None` values
+    (see `algorithm.py::generate_daily_outfits`, gated behind
+    `settings.embeddings_enabled`).
+    """
     today = today or date.today()
     preferred_colors = preferred_colors or {}
     warm_items = warm_items if warm_items is not None else []
@@ -795,6 +880,9 @@ def generate_outfits(
                 today=today,
                 now=now,
                 allow_repeat=allow_repeat,
+                item_vectors=item_vectors,
+                user_centroid=user_centroid,
+                propagation_penalties=propagation_penalties,
             )
         else:
             candidate = _fill_bottom_for_anchor(
@@ -812,6 +900,9 @@ def generate_outfits(
                 now=now,
                 allow_repeat=allow_repeat,
                 used_bottom_ids=used_bottom_ids,
+                item_vectors=item_vectors,
+                user_centroid=user_centroid,
+                propagation_penalties=propagation_penalties,
             )
         if candidate is not None:
             candidates.append(candidate)
@@ -842,6 +933,9 @@ def compose_daily_outfits(
     today: date | None = None,
     now: datetime | None = None,
     preferred_colors: dict[str, int] | None = None,
+    item_vectors: dict[UUID, list[float]] | None = None,
+    user_centroid: list[float] | None = None,
+    propagation_penalties: dict[UUID, float] | None = None,
 ) -> list[OutfitCandidate]:
     """PURE core: no DB access, no session. Drives the eval harness and the
     unit test suite; `algorithm.generate_daily_outfits` is the thin DB shell
@@ -852,6 +946,10 @@ def compose_daily_outfits(
     internally restricts to the 7-day item / 14-day combo windows) and the
     cold-start "has prior events" signal (here, unfiltered — any historical
     appearance counts), matching section 5.4 of the finalized plan.
+
+    `item_vectors`/`user_centroid`/`propagation_penalties`: RI-6 hooks, see
+    `generate_outfits` docstring — all default `None` (no-op, pre-RI-6
+    behavior).
     """
     today = today or date.today()
     pools = build_pools(items, worn_item_ids)
@@ -875,4 +973,7 @@ def compose_daily_outfits(
         today=today,
         now=now,
         k=k,
+        item_vectors=item_vectors,
+        user_centroid=user_centroid,
+        propagation_penalties=propagation_penalties,
     )

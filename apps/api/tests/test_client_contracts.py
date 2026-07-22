@@ -201,7 +201,7 @@ async def test_daily_recommendations_accept_explicit_coordinates(monkeypatch, cl
     top_item = build_wardrobe_item(user_id=user.id)
     bottom_item = build_wardrobe_item(user_id=user.id, category="jeans", color_primary="black")
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
         return [
             {
                 "top_item_id": str(top_item.id),
@@ -297,7 +297,7 @@ async def test_daily_recommendations_round_trips_color_harmony_branch(monkeypatc
     top_item = build_wardrobe_item(user_id=user.id)
     bottom_item = build_wardrobe_item(user_id=user.id, category="jeans", color_primary="black")
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
         return [
             {
                 "top_item_id": str(top_item.id),
@@ -394,7 +394,7 @@ async def test_daily_recommendations_fallback_to_saved_coordinates(monkeypatch, 
     async def fake_cache_set(key, value, ttl):
         return None
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
         return []
 
     monkeypatch.setattr(recommendations.weather_service, "get_current_weather", fake_get_weather)

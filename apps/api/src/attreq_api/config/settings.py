@@ -123,6 +123,17 @@ class Settings(BaseSettings):
         default=3, alias="WARDROBE_BATCH_PROCESSING_CONCURRENCY"
     )
 
+    # RI-6: FashionCLIP embeddings + optional LLM re-ranker. `embeddings_enabled`
+    # defaults FALSE — the checkpoint drags in torch (~600MB-2GB depending on
+    # platform) which may not be installable/runnable in every environment (CI
+    # always sets this false). When false, every embedding/centroid/propagation
+    # code path is a no-op and scoring behaves exactly as pre-RI-6.
+    embeddings_enabled: bool = Field(default=False, alias="EMBEDDINGS_ENABLED")
+    reranker_enabled: bool = Field(default=False, alias="RERANKER_ENABLED")
+    # Optional second whole-set LLM call (reversed candidate order) as a
+    # position-bias tie-break check — see services/recommendation/reranker.py.
+    reranker_both_order: bool = Field(default=False, alias="RERANKER_BOTH_ORDER")
+
     @validator("backend_cors_origins", pre=True)
     def assemble_cors_origins(cls, v):
         """Parse CORS origins from string or list."""

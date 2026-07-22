@@ -438,6 +438,26 @@ async def update_wardrobe_item(
     except Exception as e:
         logger.warning(f"Failed to update item in Weaviate: {str(e)}")
 
+    # RI-6: the image vector itself never changes on a tag edit (only the
+    # attributes did), but the `category` metadata stored alongside it in
+    # `ClothingItemVector` can go stale on a category edit — refresh it
+    # in-place (fetch existing vector, upsert with new category). Best-effort;
+    # a missing vector (never embedded, EMBEDDINGS_ENABLED=false, etc.) is a
+    # silent no-op, not an error.
+    if "category" in update_data:
+        try:
+            if weaviate_service.is_connected():
+                existing_vector = weaviate_service.get_vector(item_id)
+                if existing_vector is not None:
+                    weaviate_service.upsert_vector(
+                        item_id=updated_item.id,
+                        user_id=updated_item.user_id,
+                        category=updated_item.category,
+                        vector=existing_vector,
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to refresh item vector category in Weaviate: {str(e)}")
+
     if "purchase_price" in update_data or "brand" in update_data:
         try:
             await invalidate_wardrobe_stats_cache(current_user.id)
@@ -491,6 +511,16 @@ async def delete_wardrobe_item(
             weaviate_service.delete_item(item_id)
     except Exception as e:
         logger.warning(f"Failed to delete item from Weaviate: {str(e)}")
+
+    # RI-6: also delete the item's FashionCLIP vector — the confirmed
+    # vector-leak fix. Without this, `ClothingItemVector` accumulates rows
+    # for items that no longer exist in Postgres, which would eventually
+    # surface as phantom near-duplicate/propagation neighbors.
+    try:
+        if weaviate_service.is_connected():
+            weaviate_service.delete_vector(item_id)
+    except Exception as e:
+        logger.warning(f"Failed to delete item vector from Weaviate: {str(e)}")
 
     # Invalidate caches — a deleted item must disappear from stats and from
     # "Today" immediately, not after the 24h daily-suggestions TTL.

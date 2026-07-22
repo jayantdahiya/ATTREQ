@@ -41,6 +41,9 @@ jobs:
       JWT_ALGORITHM: HS256
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 15
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+      # RI-6: never load the real FashionCLIP model/torch in CI — every
+      # embedding/reranker test mocks Weaviate + the model class.
+      EMBEDDINGS_ENABLED: "false"
 
     steps:
       - uses: actions/checkout@v4

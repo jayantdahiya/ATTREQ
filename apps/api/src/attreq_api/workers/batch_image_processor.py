@@ -17,6 +17,7 @@ from attreq_api.services.ai.background_removal import (
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
 from attreq_api.services.ai.color_extraction import extract_palette_safe
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.ai.fashion_embeddings import fashion_embeddings_service
 from attreq_api.services.ai.schema_mapper import build_wardrobe_update_payload
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
@@ -167,6 +168,22 @@ async def _process_single_item(
                 palette, color_extraction_source = None, "llm_fallback"
             else:
                 palette, color_extraction_source = palette_outcome
+
+            # RI-6: compute the FashionCLIP embedding here, inside the `try`,
+            # while `classification_path` still exists — mirrors the same
+            # temp-dir-scoping fix applied in workers/image_processor.py
+            # (this module had the identical bug: Weaviate indexing ran
+            # after `cleanup_classification_tempdir` below). Best-effort,
+            # never raises; embeds even when BG removal failed (a noisier
+            # vector beats a coverage gap correlated with BG-removal failures).
+            item_vector: list[float] | None = None
+            if settings.embeddings_enabled:
+                try:
+                    item_vector = await asyncio.to_thread(
+                        fashion_embeddings_service.embed_image, classification_path
+                    )
+                except Exception as e:
+                    logger.warning(f"FashionCLIP embed failed for item {item_id}: {str(e)}")
         finally:
             cleanup_classification_tempdir(classification_path)
 
@@ -187,6 +204,33 @@ async def _process_single_item(
         except Exception as e:
             logger.warning(f"Weaviate indexing failed for item {item_id}: {str(e)}")
 
+        # RI-6: upsert the FashionCLIP vector + near-duplicate check. Uses
+        # the vector computed above — no file access needed, safe to run
+        # after the temp-dir cleanup.
+        possible_duplicate_of = None
+        if item_vector is not None and weaviate_service.is_connected():
+            try:
+                weaviate_service.init_vector_schema()
+                dup_neighbors = weaviate_service.query_neighbors(
+                    vector=item_vector,
+                    user_id=user_id,
+                    k=1,
+                    min_sim=0.97,
+                    exclude_item_id=item_id,
+                )
+                weaviate_service.upsert_vector(
+                    item_id=item_id,
+                    user_id=user_id,
+                    category=classification_result.get("category"),
+                    vector=item_vector,
+                )
+                if dup_neighbors:
+                    possible_duplicate_of = dup_neighbors[0][0]
+            except Exception as e:
+                logger.warning(
+                    f"FashionCLIP vector upsert/dup-check failed for item {item_id}: {str(e)}"
+                )
+
         update_data = build_wardrobe_update_payload(
             detection_result=classification_result,
             palette=palette,
@@ -194,6 +238,8 @@ async def _process_single_item(
             processed_image_url=processed_image_url,
             thumbnail_url=thumbnail_url,
         )
+        if possible_duplicate_of is not None:
+            update_data["possible_duplicate_of"] = possible_duplicate_of
         await wardrobe_crud.update(db=db, item_id=item_id, update_data=update_data)
         logger.info(f"Item {item_id} processing completed successfully")
 

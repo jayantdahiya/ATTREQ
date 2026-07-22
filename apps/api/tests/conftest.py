@@ -107,6 +107,14 @@ def build_wardrobe_item(*, user_id: uuid.UUID, **overrides) -> WardrobeItem:
         "color_extraction_source": overrides.get("color_extraction_source"),
         "attribute_confidence": overrides.get("attribute_confidence"),
         "schema_version": overrides.get("schema_version", 1),
+        # RI-6 — same "transient (never-flushed) instance" reasoning as the
+        # RI-2 fields above: the column's client-side `default=False`/`None`
+        # only applies on a real INSERT flush, so a plain constructed-in-Python
+        # fixture needs these set explicitly or `WardrobeItemResponse`
+        # validation sees `None` where a `bool` is required.
+        "needs_review": overrides.get("needs_review", False),
+        "review_reason": overrides.get("review_reason"),
+        "possible_duplicate_of": overrides.get("possible_duplicate_of"),
     }
     defaults.update(overrides)
     return WardrobeItem(**defaults)

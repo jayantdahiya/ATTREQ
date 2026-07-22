@@ -87,6 +87,20 @@ class WardrobeItem(Base):
     attribute_confidence = Column(JSONB, nullable=True)  # per-attribute 0-1 confidence, v2 only
     schema_version = Column(Integer, nullable=False, default=1)  # 1 = pre-RI-2, 2 = v2 attributes
 
+    # RI-6: FashionCLIP near-duplicate detection + zero-shot cross-check
+    # review flags. `possible_duplicate_of` is set by the upload worker when
+    # a fresh item's embedding is >= 0.97 cosine-similar to an
+    # already-completed item of the same user (see
+    # workers/image_processor.py, services/ai/embeddings.py::query_neighbors).
+    # `needs_review`/`review_reason` are set by the offline
+    # `scripts/crosscheck_tags.py` zero-shot disagreement check — never by
+    # the live upload pipeline.
+    needs_review = Column(Boolean, nullable=False, default=False, server_default="false")
+    review_reason = Column(String(255), nullable=True)
+    possible_duplicate_of = Column(
+        UUID(as_uuid=True), ForeignKey("wardrobe_items.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(

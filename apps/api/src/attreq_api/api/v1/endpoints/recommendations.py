@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from attreq_api.api.v1.deps import get_current_active_user
 from attreq_api.config.database import get_db
+from attreq_api.config.settings import settings
 from attreq_api.crud.recommendation_event import recommendation_event_crud
 from attreq_api.crud.user_event import user_event_crud
 from attreq_api.integrations.external.weather_api import weather_service
@@ -23,6 +24,13 @@ from attreq_api.schemas.telemetry import (
 from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
 from attreq_api.services.cache.redis_client import redis_cache
 from attreq_api.services.recommendation.algorithm import generate_daily_outfits
+from attreq_api.services.recommendation.reranker import rerank
+
+# RI-6: reranker pool — how many diverse candidates to generate/rerank before
+# slicing down to the display count, when RERANKER_ENABLED. See finalized
+# plan §9: "the reranker needs a top-5" (generate_daily_outfits's diversity
+# dedup otherwise never produces more than the display count on its own).
+RERANKER_POOL_SIZE = 5
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -111,14 +119,20 @@ async def get_daily_suggestions(
             detail="Weather service temporarily unavailable",
         ) from e
 
-    # Step 4: Generate outfit suggestions
+    # Step 4: Generate outfit suggestions. RI-6: when the LLM reranker is on,
+    # generate a larger diverse pool (RERANKER_POOL_SIZE) so there is
+    # something to rerank, then slice back down to the display count below —
+    # `generate_daily_outfits`'s own diversity dedup never returns more than
+    # `num_suggestions` on its own.
+    display_count = 3
     try:
         suggestions = await generate_daily_outfits(
             db=db,
             user_id=current_user.id,
             weather=weather_data,
             occasion=occasion,
-            num_suggestions=3,
+            num_suggestions=display_count,
+            pool_size=RERANKER_POOL_SIZE if settings.reranker_enabled else None,
         )
     except Exception as e:
         logger.error(f"Failed to generate outfit suggestions: {str(e)}")
@@ -134,11 +148,34 @@ async def get_daily_suggestions(
             detail="Insufficient wardrobe items to generate outfit suggestions. Please add more items to your wardrobe.",
         )
 
+    # Step 4a (RI-6): rerank the pool for DISPLAY ORDER + rationale only —
+    # never re-derives scores (see services/recommendation/reranker.py). Runs
+    # BEFORE caching (the 24h cache would otherwise make the reranker
+    # invisible on every cache hit) and before the pool is sliced down to the
+    # display count, so the reranker actually has >1 outfit's worth of
+    # choice. Zero LLM calls when RERANKER_ENABLED=false (the shipped default).
+    reranker_rationales: dict[str, str] | None = None
+    if settings.reranker_enabled:
+        day_of_week = datetime.utcnow().strftime("%A")
+        rerank_context = {"occasion": occasion, "weather": weather_data, "day_of_week": day_of_week}
+        suggestions, reranker_rationales = await rerank(suggestions, rerank_context)
+
+    suggestions = suggestions[:display_count]
+
+    reranker_served = bool(reranker_rationales)
+    if reranker_rationales:
+        for suggestion in suggestions:
+            key = f"{suggestion.get('top_item_id')}:{suggestion.get('bottom_item_id')}"
+            suggestion["rationale"] = reranker_rationales.get(key)
+
     # Step 4b: Stamp recommendation_id + outfit_index (single source of truth = list
-    # order at write time). generate_daily_outfits stays a pure scoring function.
+    # order at write time, AFTER any reranker reordering/slicing above).
+    # generate_daily_outfits stays a pure scoring function.
     recommendation_id = uuid.uuid4()
     for index, suggestion in enumerate(suggestions):
         suggestion["outfit_index"] = index
+
+    logger.info(f"reranker_served={reranker_served} user={current_user.id}")
 
     # Step 4c: Write one `shown` telemetry row per candidate, from the raw candidate
     # dicts (which still carry all 6 component scores, including style_dna/behaviour —
@@ -282,6 +319,19 @@ async def submit_recommendation_feedback(
         )
     except Exception as e:
         logger.warning(f"Failed to write user_event for recommendation feedback: {e}")
+
+    # RI-6 (finalized plan §4, exit-criterion enabler): a "dislike_item"
+    # rejection is the primary signal `feedback_source.get_recent_dislikes`
+    # reads, which feeds thumbs-propagation — but propagation is only
+    # recomputed on a fresh `generate_daily_outfits()` call. Without
+    # invalidating today's cache here, "rejecting an item measurably lowers
+    # near-duplicate candidates' scores next generation" would be
+    # unobservable for up to 24h. Best-effort, never blocks the response.
+    if is_rejection and rejection_reason == "dislike_item":
+        try:
+            await invalidate_daily_suggestions(current_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to invalidate daily-suggestions cache for feedback: {e}")
 
     logger.info(
         f"Recommendation feedback recorded: user={current_user.id} "

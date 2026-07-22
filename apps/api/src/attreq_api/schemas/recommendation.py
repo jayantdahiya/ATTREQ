@@ -70,6 +70,24 @@ class OutfitScores(BaseModel):
     cold_start_bonus: float = Field(0.0, description="RI-4: content-similarity prior for genuinely-new items")
     rediscovery_bonus: float = Field(0.0, description="RI-4: grey-inventory promotion, capped at +0.05")
     rotation_penalty: float = Field(0.0, description="RI-4: anti-repetition decay, always <= 0")
+    # RI-6: additive score-composition keys. Both default to `None` so
+    # candidates generated with EMBEDDINGS_ENABLED=false (no vectors
+    # available at all) still validate without silently dropping data.
+    centroid: float | None = Field(
+        None,
+        description=(
+            "RI-6: mean FashionCLIP cosine similarity (mapped to [0,1]) between "
+            "the outfit's core items and the user's style centroid. Hand-tuned "
+            "0.10 weight, provisional pending RI-5's fitted weights."
+        ),
+    )
+    propagation_adjustment: float | None = Field(
+        None,
+        description=(
+            "RI-6: thumbs-propagation adjustment from recent like/dislike "
+            "neighbors, clamped to [-0.05, +0.05] per item."
+        ),
+    )
     total: float = Field(..., description="Total combined score, clamped to [0, 1]")
 
     @field_serializer("total")
@@ -108,6 +126,13 @@ class OutfitSuggestion(BaseModel):
     rediscovery: bool = Field(False, description="RI-4: at most one true per batch — a grey-inventory pick")
     rediscovery_item_id: str | None = Field(
         None, description="RI-4: the neglected item id driving the rediscovery bonus, when marked"
+    )
+    rationale: str | None = Field(
+        None,
+        description=(
+            "RI-6: one-sentence LLM re-ranker rationale for this pick, only "
+            "present when RERANKER_ENABLED and the LLM call validated."
+        ),
     )
 
 

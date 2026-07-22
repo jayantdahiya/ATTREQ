@@ -57,3 +57,14 @@ scikit-learn>=1.3.0
 # Recommendation intelligence eval harness (RI-1)
 pandas>=2.0.0
 gdown>=5.0.0
+
+# --- FashionCLIP embeddings (RI-6) ---
+# CPU-only torch. On Linux the default PyPI torch wheel bundles CUDA (~2GB);
+# force the CPU wheel via the extra index + a +cpu pin so CI/Docker stay small.
+# Gated at runtime behind EMBEDDINGS_ENABLED (default false — see config/settings.py);
+# the model/torch are never imported unless a caller actually enables the flag AND
+# uses the embedding service (see services/ai/fashion_embeddings.py's lazy singleton).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu ; platform_system == "Linux"
+torch>=2.2.0,<3.0.0 ; platform_system == "Darwin"   # macOS wheel is CPU/MPS already
+transformers>=4.40.0
