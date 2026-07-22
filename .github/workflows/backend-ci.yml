@@ -66,6 +66,11 @@ jobs:
           PYTHONPATH=src python -m alembic upgrade head
           PYTHONPATH=src python -m alembic check
 
+      - name: Check WardrobeEnums.swift matches wardrobe_enums.py (RI-2)
+        run: |
+          cd apps/api
+          PYTHONPATH=src python scripts/gen_swift_enums.py --check
+
       - name: Run tests
         run: |
           cd apps/api

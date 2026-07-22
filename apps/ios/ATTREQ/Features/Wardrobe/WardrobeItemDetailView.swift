@@ -9,10 +9,21 @@
 //
 //  Backend contract: apps/api/src/attreq_api/api/v1/endpoints/wardrobe.py
 //  - GET    /wardrobe/items/{id}                (full item incl. `photos`)
-//  - PUT    /wardrobe/items/{id}                 (price/brand edits)
+//  - PUT    /wardrobe/items/{id}                 (price/brand edits; RI-2:
+//           texture/silhouette/neckline/sleeve_length/statement_level/
+//           is_fullbody correction chips below. Each changed/confirmed field
+//           makes the backend emit an `item_corrected` user_event — no
+//           client-side event call needed, the PUT alone triggers it.)
 //  - PATCH  /wardrobe/items/{id}/status          (archive/unarchive)
 //  - POST   /wardrobe/items/{id}/photos          (add a photo)
 //  - GET    /wardrobe/items/{id}/photos          (poll for thumbnail)
+//
+//  RI-2 correction UX: chip pickers for the 5 fixed-vocabulary enum fields
+//  (Texture/Silhouette/Neckline/SleeveLength/StatementLevel — see generated
+//  `WardrobeEnums.swift`) plus an is-fullbody toggle. A field whose
+//  `attributeConfidence` is below 0.6 renders an amber "tap to confirm"
+//  treatment — correction-first, not correction-forced (the user may ignore
+//  it; noisy labels are acceptable in aggregate).
 //
 
 import PhotosUI
@@ -46,6 +57,8 @@ final class WardrobeItemDetailViewModel {
     private(set) var isChangingStatus = false
     /// True while the price/brand edit save is in flight.
     private(set) var isSavingEdits = false
+    /// True while a single attribute-chip correction (RI-2) is saving.
+    private(set) var isSavingAttribute = false
     /// Surfaced banner for any action failure (load, upload, archive, save).
     var errorMessage: String?
 
@@ -126,6 +139,62 @@ final class WardrobeItemDetailViewModel {
         } catch {
             errorMessage = Self.message(for: error, fallback: "Couldn't save your changes.")
             return false
+        }
+    }
+
+    // MARK: Attribute corrections (RI-2)
+    //
+    // Each save sends ONLY the one changed field (`WardrobeItemUpdate` uses
+    // `exclude_unset`, so omitted fields are left untouched server-side).
+    // The backend compares old vs new value itself and emits `item_corrected`
+    // — including when the value is unchanged (a confirmation tap on a
+    // low-confidence flag), so there is nothing extra to do here beyond PUT.
+
+    /// `true` when this field's LLM confidence is below the "tap to confirm"
+    /// threshold. Confidence keys are the backend's snake_case attribute
+    /// names (`texture`, `silhouette`, `neckline`, `sleeve_length`) — NOT
+    /// camelCased, since dictionary keys pass through `JSONDecoder` verbatim.
+    func isLowConfidence(_ attributeKey: String) -> Bool {
+        guard let confidence = item?.attributeConfidence?[attributeKey] else { return false }
+        return confidence < 0.6
+    }
+
+    func updateTexture(_ value: Texture) async {
+        await saveAttribute { $0.texture = value }
+    }
+
+    func updateSilhouette(_ value: Silhouette) async {
+        await saveAttribute { $0.silhouette = value }
+    }
+
+    func updateNeckline(_ value: Neckline) async {
+        await saveAttribute { $0.neckline = value }
+    }
+
+    func updateSleeveLength(_ value: SleeveLength) async {
+        await saveAttribute { $0.sleeveLength = value }
+    }
+
+    func updateStatementLevel(_ value: StatementLevel) async {
+        await saveAttribute { $0.statementLevel = value }
+    }
+
+    func updateIsFullbody(_ value: Bool) async {
+        await saveAttribute { $0.isFullbody = value }
+    }
+
+    private func saveAttribute(_ configure: (inout WardrobeItemUpdateRequest) -> Void) async {
+        guard !isSavingAttribute else { return }
+        isSavingAttribute = true
+        defer { isSavingAttribute = false }
+        var body = WardrobeItemUpdateRequest()
+        configure(&body)
+        do {
+            let updated = try await repository.update(itemId: itemId, body: body)
+            item = updated
+            errorMessage = nil
+        } catch {
+            errorMessage = Self.message(for: error, fallback: "Couldn't save that correction.")
         }
     }
 
@@ -344,6 +413,9 @@ struct WardrobeItemDetailView: View {
         detailsCard(for: item)
             .padding(.bottom, 16)
 
+        attributesCard(for: item)
+            .padding(.bottom, 16)
+
         editCard
             .padding(.bottom, 20)
 
@@ -489,6 +561,118 @@ struct WardrobeItemDetailView: View {
 
     private var divider: some View {
         Rectangle().fill(Theme.borderSoft).frame(height: 1)
+    }
+
+    // MARK: - Attribute corrections (RI-2)
+
+    /// Chip pickers for the 5 fixed-vocabulary v2 attributes plus an
+    /// is-fullbody toggle. Each row is independently saved via
+    /// `WardrobeItemDetailViewModel.updateX` (one PUT per changed field).
+    private func attributesCard(for item: WardrobeItem) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            attributeChipRow(
+                title: "Texture",
+                confidenceKey: "texture",
+                options: Texture.allCases,
+                selection: item.texture,
+                display: { $0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized },
+                onSelect: { value in Task { await model.updateTexture(value) } }
+            )
+            divider
+            attributeChipRow(
+                title: "Silhouette",
+                confidenceKey: "silhouette",
+                options: Silhouette.allCases,
+                selection: item.silhouette,
+                display: { $0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized },
+                onSelect: { value in Task { await model.updateSilhouette(value) } }
+            )
+            divider
+            attributeChipRow(
+                title: "Neckline",
+                confidenceKey: "neckline",
+                options: Neckline.allCases,
+                selection: item.neckline,
+                display: { $0 == .nA ? "N/A" : $0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized },
+                onSelect: { value in Task { await model.updateNeckline(value) } }
+            )
+            divider
+            attributeChipRow(
+                title: "Sleeve length",
+                confidenceKey: "sleeve_length",
+                options: SleeveLength.allCases,
+                selection: item.sleeveLength,
+                display: { $0 == .nA ? "N/A" : $0.rawValue.replacingOccurrences(of: "_", with: " ").capitalized },
+                onSelect: { value in Task { await model.updateSleeveLength(value) } }
+            )
+            divider
+            attributeChipRow(
+                title: "Statement level",
+                confidenceKey: nil, // no per-attribute confidence tracked for this field
+                options: StatementLevel.allCases,
+                selection: item.statementLevel,
+                display: { $0.rawValue.capitalized },
+                onSelect: { value in Task { await model.updateStatementLevel(value) } }
+            )
+            divider
+            fullbodyToggle(for: item)
+        }
+        .attreqCard(padding: 16)
+    }
+
+    /// A titled, horizontally-scrolling single-select chip row for one v2
+    /// enum attribute. Shows an amber "tap to confirm" hint when the
+    /// backend's per-attribute confidence for this field is below 0.6.
+    private func attributeChipRow<T: RawRepresentable & CaseIterable & Hashable>(
+        title: String,
+        confidenceKey: String?,
+        options: [T],
+        selection: T?,
+        display: @escaping (T) -> String,
+        onSelect: @escaping (T) -> Void
+    ) -> some View where T.RawValue == String {
+        let lowConfidence = confidenceKey.map(model.isLowConfidence) ?? false
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                MonoLabel(title)
+                if lowConfidence {
+                    // `.gold` is the closest existing tint to an amber
+                    // "needs attention" treatment (no dedicated warning
+                    // variant exists in AttreqPill today).
+                    AttreqPill("Tap to confirm", variant: .gold)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(options, id: \.self) { option in
+                        AttreqChip(display(option), selected: selection == option) {
+                            onSelect(option)
+                        }
+                    }
+                }
+            }
+        }
+        .opacity(model.isSavingAttribute ? 0.6 : 1.0)
+        .disabled(model.isSavingAttribute)
+    }
+
+    private func fullbodyToggle(for item: WardrobeItem) -> some View {
+        HStack {
+            MonoLabel("Full-body item")
+            Spacer()
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { item.isFullbody },
+                    set: { value in Task { await model.updateIsFullbody(value) } }
+                )
+            )
+            .labelsHidden()
+            .tint(Theme.clay)
+        }
+        .disabled(model.isSavingAttribute)
+        .accessibilityIdentifier("toggle-is-fullbody")
     }
 
     // MARK: - Editable price / brand

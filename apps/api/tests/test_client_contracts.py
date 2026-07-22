@@ -12,7 +12,7 @@ from attreq_api.config import security
 from attreq_api.config.database import get_db
 from attreq_api.main import app
 from attreq_api.services.recommendation import algorithm
-from attreq_api.workers import batch_image_processor
+from attreq_api.workers import batch_image_processor, image_processor
 from tests.conftest import DummyDB, build_outfit, build_user, build_wardrobe_item
 
 
@@ -991,3 +991,257 @@ async def test_batch_upload_of_20_all_reach_terminal_status_no_cross_item_swap(m
             assert updates[item_id]["category"] is None
         else:
             assert updates[item_id]["category"] == f"category-for-{expected_path}"
+
+
+# ============================================================================
+# RI-2: Classifier schema v2 — response contracts, correction validation,
+# item_corrected telemetry, and worker BG-removal-failure color fallback.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_wardrobe_item_round_trips_color_palette_and_attribute_confidence(
+    monkeypatch, client, dummy_db
+):
+    user = build_user()
+    item = build_wardrobe_item(
+        user_id=user.id,
+        texture="knit",
+        silhouette="oversized",
+        neckline="crew",
+        sleeve_length="long",
+        statement_level="statement",
+        llm_formality=2,
+        is_fullbody=False,
+        color_palette=[
+            {"lab": [50.0, 1.0, 2.0], "hex": "#808080", "share": 0.7, "is_neutral": True, "name": "gray"}
+        ],
+        color_extraction_source="pixel",
+        attribute_confidence={"category": 0.9, "texture": 0.4},
+        schema_version=2,
+    )
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get(f"/api/v1/wardrobe/items/{item.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["texture"] == "knit"
+    assert body["silhouette"] == "oversized"
+    assert body["schema_version"] == 2
+    assert body["color_palette"] == [
+        {"lab": [50.0, 1.0, 2.0], "hex": "#808080", "share": 0.7, "is_neutral": True, "name": "gray"}
+    ]
+    assert body["attribute_confidence"] == {"category": 0.9, "texture": 0.4}
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_wardrobe_item_v1_row_serializes_with_null_v2_fields(monkeypatch, client, dummy_db):
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id)  # defaults: schema_version=1, all v2 fields None
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get(f"/api/v1/wardrobe/items/{item.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == 1
+    assert body["texture"] is None
+    assert body["color_palette"] is None
+    assert body["attribute_confidence"] is None
+    assert body["is_fullbody"] is False
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_wardrobe_item_rejects_out_of_vocabulary_enum_with_422(client, dummy_db):
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.put(
+        f"/api/v1/wardrobe/items/{uuid.uuid4()}", json={"texture": "fur"}
+    )
+
+    assert response.status_code == 422
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_wardrobe_item_emits_item_corrected_event_on_attribute_change(
+    monkeypatch, client, dummy_db
+):
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id, texture="smooth", schema_version=2)
+    emitted: list[dict] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_update(db, item_id, update_data):
+        for field, value in update_data.items():
+            setattr(item, field, value)
+        return item
+
+    async def fake_create_event(db, *, user_id, event_type, payload=None):
+        emitted.append({"user_id": user_id, "event_type": event_type, "payload": payload})
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "update", fake_update)
+    monkeypatch.setattr(wardrobe.user_event_crud, "create", fake_create_event)
+    monkeypatch.setattr(wardrobe.weaviate_service, "is_connected", lambda: False)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.put(
+        f"/api/v1/wardrobe/items/{item.id}", json={"texture": "knit"}
+    )
+
+    assert response.status_code == 200
+    assert len(emitted) == 1
+    event = emitted[0]
+    assert event["event_type"] == "item_corrected"
+    assert event["payload"]["field"] == "texture"
+    assert event["payload"]["old_value"] == "smooth"
+    assert event["payload"]["new_value"] == "knit"
+    assert event["payload"]["was_confirmation"] is False
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_wardrobe_item_confirming_same_value_marks_was_confirmation(
+    monkeypatch, client, dummy_db
+):
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id, silhouette="regular", schema_version=2)
+    emitted: list[dict] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_update(db, item_id, update_data):
+        for field, value in update_data.items():
+            setattr(item, field, value)
+        return item
+
+    async def fake_create_event(db, *, user_id, event_type, payload=None):
+        emitted.append(payload)
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "update", fake_update)
+    monkeypatch.setattr(wardrobe.user_event_crud, "create", fake_create_event)
+    monkeypatch.setattr(wardrobe.weaviate_service, "is_connected", lambda: False)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.put(
+        f"/api/v1/wardrobe/items/{item.id}", json={"silhouette": "regular"}
+    )
+
+    assert response.status_code == 200
+    assert emitted[0]["was_confirmation"] is True
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_image_processor_bg_removal_failure_sets_llm_fallback_color(monkeypatch):
+    """Worker-level: when background removal fails, `classification_path` is
+    the ORIGINAL image (not background-removed) — pixel color extraction must
+    be skipped entirely (`color_extraction_source="llm_fallback"`,
+    `color_palette=None`), while classification still persists normally.
+    """
+
+    class FakeSessionCM:
+        def __init__(self):
+            self.db = DummyDB()
+
+        async def __aenter__(self):
+            return self.db
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    captured_update: dict = {}
+
+    async def fake_update_processing_status(db, item_id, status):
+        return None
+
+    async def fake_update(db, item_id, update_data):
+        captured_update.update(update_data)
+
+    async def fake_generate_processed_and_thumbnail(image_path, user_id, log_ref=None):
+        # Background removal failed: processed_image_url is None.
+        return image_path, None, None
+
+    async def fake_detect_clothing(image_path):
+        return {
+            "category": "shirt",
+            "color_primary": "blue",
+            "color_secondary": None,
+            "pattern": "solid",
+            "season": ["all"],
+            "occasion": ["casual"],
+            "detection_confidence": 0.8,
+            "classification_source": "ai",
+            "processing_status": "completed",
+        }
+
+    monkeypatch.setattr(image_processor, "AsyncSessionLocal", FakeSessionCM)
+    monkeypatch.setattr(image_processor.wardrobe_crud, "update_processing_status", fake_update_processing_status)
+    monkeypatch.setattr(image_processor.wardrobe_crud, "update", fake_update)
+    monkeypatch.setattr(
+        image_processor, "generate_processed_and_thumbnail", fake_generate_processed_and_thumbnail
+    )
+    monkeypatch.setattr(image_processor.clothing_detection_service, "detect_clothing", fake_detect_clothing)
+    monkeypatch.setattr(image_processor.weaviate_service, "is_connected", lambda: False)
+
+    async def fake_invalidate_stats(user_id):
+        return None
+
+    monkeypatch.setattr(image_processor, "invalidate_wardrobe_stats_cache", fake_invalidate_stats)
+
+    await image_processor.process_wardrobe_image(
+        item_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        original_image_ref="/tmp/original.jpg",
+        original_image_url="/uploads/originals/original.jpg",
+    )
+
+    assert captured_update["color_extraction_source"] == "llm_fallback"
+    assert captured_update["color_palette"] is None
+    assert captured_update["category"] == "shirt"
+    assert captured_update["processing_status"] == "completed"

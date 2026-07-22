@@ -88,10 +88,25 @@ def build_wardrobe_item(*, user_id: uuid.UUID, **overrides) -> WardrobeItem:
         "occasion": ["casual"],
         "detection_confidence": 0.92,
         "processing_status": "completed",
+        "status": "active",
         "wear_count": 2,
         "last_worn": date(2026, 4, 17),
         "created_at": timestamp,
         "updated_at": timestamp,
+        # Classifier schema v2 (RI-2) — default to a v1-shaped row (all
+        # `None`/`False`/`schema_version=1`) so existing callers building a
+        # fixture without these kwargs still get a realistic pre-RI-2 item.
+        "texture": overrides.get("texture"),
+        "silhouette": overrides.get("silhouette"),
+        "neckline": overrides.get("neckline"),
+        "sleeve_length": overrides.get("sleeve_length"),
+        "statement_level": overrides.get("statement_level"),
+        "llm_formality": overrides.get("llm_formality"),
+        "is_fullbody": overrides.get("is_fullbody", False),
+        "color_palette": overrides.get("color_palette"),
+        "color_extraction_source": overrides.get("color_extraction_source"),
+        "attribute_confidence": overrides.get("attribute_confidence"),
+        "schema_version": overrides.get("schema_version", 1),
     }
     defaults.update(overrides)
     return WardrobeItem(**defaults)

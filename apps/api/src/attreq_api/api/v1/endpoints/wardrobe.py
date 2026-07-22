@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from attreq_api.api.v1.deps import get_current_active_user
 from attreq_api.config.database import get_db
 from attreq_api.config.settings import settings
+from attreq_api.crud.user_event import user_event_crud
 from attreq_api.crud.wardrobe import wardrobe_crud
 from attreq_api.crud.wardrobe_photo import wardrobe_photo_crud
 from attreq_api.models.user import User
@@ -41,6 +42,18 @@ from attreq_api.workers.image_processor import process_wardrobe_image, process_w
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# User-correctable v2 attribute fields (RI-2) — matches `WardrobeItemUpdate`'s
+# system-derived-excluded field set. A PUT that changes any of these emits an
+# `item_corrected` user_event (RI-1), one event per changed/confirmed field.
+_CORRECTABLE_ATTRIBUTE_FIELDS = (
+    "texture",
+    "silhouette",
+    "neckline",
+    "sleeve_length",
+    "statement_level",
+    "is_fullbody",
+)
 
 
 def _validate_image_upload(file: UploadFile, *, label: str = "File") -> None:
@@ -368,8 +381,42 @@ async def update_wardrobe_item(
     # Prepare update data (exclude None values)
     update_data = item_update.model_dump(exclude_unset=True)
 
+    # Capture old values for any correctable v2 attribute fields the client
+    # actually sent, before the update mutates `item` — used below to emit
+    # `item_corrected` events (RI-1/RI-2 handoff). Best-effort, computed from
+    # the field set the client sent, not from what actually changed in the DB.
+    corrections: list[dict] = []
+    for field in _CORRECTABLE_ATTRIBUTE_FIELDS:
+        if field in update_data:
+            old_value = getattr(item, field, None)
+            new_value = update_data[field]
+            corrections.append(
+                {
+                    "field": field,
+                    "old_value": old_value,
+                    "new_value": new_value,
+                    "was_confirmation": old_value == new_value,
+                }
+            )
+
     # Update in database
     updated_item = await wardrobe_crud.update(db, item_id, update_data)
+
+    # Emit item_corrected telemetry — one event per corrected/confirmed
+    # attribute field, best-effort, must never block the update response.
+    # `was_confirmation=True` means the user tapped "confirm" on a
+    # low-confidence flag without changing the value (see iOS
+    # WardrobeItemDetailView); both cases are labeled training/eval data.
+    for correction in corrections:
+        try:
+            await user_event_crud.create(
+                db,
+                user_id=current_user.id,
+                event_type="item_corrected",
+                payload={"item_id": str(item_id), **correction},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to emit item_corrected event: {e}")
 
     # Update in Weaviate if connected
     try:

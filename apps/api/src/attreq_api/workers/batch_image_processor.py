@@ -15,7 +15,9 @@ from attreq_api.services.ai.background_removal import (
     generate_processed_and_thumbnail,
 )
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
+from attreq_api.services.ai.color_extraction import extract_palette_safe
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.ai.schema_mapper import build_wardrobe_update_payload
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 logger = logging.getLogger(__name__)
@@ -114,17 +116,24 @@ async def _process_single_item(
         # helper). Falls back internally to the original bytes/path if bg
         # removal fails, so `classification_path` is always a valid file to
         # classify against.
-        classification_path, processed_image_url, thumbnail_url = (
+        classification_path, bg_removed_url, thumbnail_url = (
             await generate_processed_and_thumbnail(
                 image_ref, user_id, log_ref=f"item {item_id}"
             )
         )
+        # `bg_removed_url` is None iff background removal failed, in which
+        # case `classification_path` is `original_tmp`, not a
+        # background-removed image — pixel color extraction must not run
+        # against it (see color_extraction.py docstring).
+        bg_removal_succeeded = bg_removed_url is not None
         # Background removal failed -> fall back to the already-stored
         # original URL/key, never a freshly (and, for S3, presigned) one.
-        processed_image_url = processed_image_url or image_url
+        processed_image_url = bg_removed_url or image_url
 
         try:
-            # Classify via Groq (or fallback)
+            # Classify via Groq (or fallback) and extract the pixel color
+            # palette concurrently — a failure in one must not affect the
+            # other.
             classification_result: dict[str, Any] = {
                 "category": None,
                 "color_primary": None,
@@ -136,12 +145,28 @@ async def _process_single_item(
                 "classification_source": "fallback",
                 "processing_status": "failed",
             }
-            try:
-                classification_result = await clothing_detection_service.detect_clothing(
-                    classification_path
-                )
-            except Exception as e:
-                logger.error(f"Clothing detection failed for item {item_id}: {str(e)}")
+            detect_coro = clothing_detection_service.detect_clothing(classification_path)
+            palette_coro = extract_palette_safe(
+                classification_path if bg_removal_succeeded else None,
+                log_ref=f"item {item_id}",
+            )
+            detection_outcome, palette_outcome = await asyncio.gather(
+                detect_coro, palette_coro, return_exceptions=True
+            )
+
+            if isinstance(detection_outcome, BaseException):
+                logger.error(f"Clothing detection failed for item {item_id}: {str(detection_outcome)}")
+            else:
+                classification_result = detection_outcome
+
+            # `extract_palette_safe` never raises — it degrades internally to
+            # (None, "llm_fallback"). `isinstance` check here is a defensive
+            # backstop only.
+            if isinstance(palette_outcome, BaseException):
+                logger.error(f"Color extraction task errored for item {item_id}: {str(palette_outcome)}")
+                palette, color_extraction_source = None, "llm_fallback"
+            else:
+                palette, color_extraction_source = palette_outcome
         finally:
             cleanup_classification_tempdir(classification_path)
 
@@ -162,23 +187,14 @@ async def _process_single_item(
         except Exception as e:
             logger.warning(f"Weaviate indexing failed for item {item_id}: {str(e)}")
 
-        await wardrobe_crud.update(
-            db=db,
-            item_id=item_id,
-            update_data={
-                "processed_image_url": processed_image_url,
-                "thumbnail_url": thumbnail_url,
-                "category": classification_result.get("category"),
-                "color_primary": classification_result.get("color_primary"),
-                "color_secondary": classification_result.get("color_secondary"),
-                "pattern": classification_result.get("pattern"),
-                "season": classification_result.get("season", []),
-                "occasion": classification_result.get("occasion", []),
-                "detection_confidence": classification_result.get("detection_confidence", 0.0),
-                "classification_source": classification_result.get("classification_source"),
-                "processing_status": "completed",
-            },
+        update_data = build_wardrobe_update_payload(
+            detection_result=classification_result,
+            palette=palette,
+            color_extraction_source=color_extraction_source,
+            processed_image_url=processed_image_url,
+            thumbnail_url=thumbnail_url,
         )
+        await wardrobe_crud.update(db=db, item_id=item_id, update_data=update_data)
         logger.info(f"Item {item_id} processing completed successfully")
 
     except Exception as e:

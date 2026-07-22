@@ -72,6 +72,10 @@ unfixable = []
 "__init__.py" = ["F401", "E402"]  # Allow unused imports and imports not at top
 "tests/**/*.py" = ["S101", "PLR2004"]  # Allow assert statements and magic values in tests
 "alembic/**/*.py" = ["E402", "F401"]  # Allow imports not at top in alembic
+# RI-2: `class X(str, Enum)` is deliberate, not `StrEnum` — it serializes to a
+# bare string under Pydantic v2, matching the existing free-string storage
+# idiom (category/pattern/etc). See schemas/wardrobe_enums.py module docstring.
+"src/attreq_api/schemas/wardrobe_enums.py" = ["UP042"]
 "src/attreq_api/main.py" = ["E402"]  # Allow imports after settings initialization
 
 # Import sorting configuration

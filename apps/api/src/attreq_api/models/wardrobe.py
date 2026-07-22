@@ -2,8 +2,20 @@
 
 import uuid
 
-from sqlalchemy import ARRAY, Column, Date, DateTime, Float, ForeignKey, Integer, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -51,6 +63,29 @@ class WardrobeItem(Base):
     status = Column(String(20), nullable=False, default="active", index=True)  # active|archived
     purchase_price = Column(Numeric(10, 2), nullable=True)
     brand = Column(String(100), nullable=True)  # no index — per-user grouping is tiny
+
+    # Classifier schema v2 (RI-2) — fixed-vocabulary attributes. Stored as
+    # plain strings (enum `.value`), matching the existing free-string
+    # category/pattern idiom (avoids PG-enum ALTER TYPE pain). See
+    # `schemas/wardrobe_enums.py` for the vocabularies.
+    texture = Column(String(20), nullable=True)
+    silhouette = Column(String(20), nullable=True)
+    neckline = Column(String(20), nullable=True)
+    sleeve_length = Column(String(20), nullable=True)
+    statement_level = Column(String(20), nullable=True)
+    llm_formality = Column(SmallInteger, nullable=True)  # LLM's 1-4 formality judgment
+    is_fullbody = Column(
+        Boolean, nullable=False, default=False
+    )  # derived server-side from category (dress/jumpsuit/romper)
+
+    # Deterministic CIELAB color palette (RI-2) — always pixel-derived when
+    # present; see `services/ai/color_extraction.py`. `color_primary` above
+    # remains the LLM's human-readable descriptor/fallback.
+    color_palette = Column(JSONB, nullable=True)  # [{lab, hex, share, is_neutral, name}], dominant first
+    color_extraction_source = Column(String(20), nullable=True)  # "pixel" | "llm_fallback"
+
+    attribute_confidence = Column(JSONB, nullable=True)  # per-attribute 0-1 confidence, v2 only
+    schema_version = Column(Integer, nullable=False, default=1)  # 1 = pre-RI-2, 2 = v2 attributes
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

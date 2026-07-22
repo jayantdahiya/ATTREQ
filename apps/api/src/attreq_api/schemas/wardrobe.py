@@ -4,9 +4,38 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
+from attreq_api.schemas.wardrobe_enums import (
+    NECKLINE_VALUES,
+    SILHOUETTE_VALUES,
+    SLEEVE_LENGTH_VALUES,
+    STATEMENT_LEVEL_VALUES,
+    TEXTURE_VALUES,
+)
 from attreq_api.services.storage import resolve_image_url
+
+
+def _validate_enum_value(value: str | None, allowed: list[str], field_name: str) -> str | None:
+    """Reject an out-of-vocabulary enum string with a clear 422 message.
+
+    Used only on the *user-correctable* enum fields in `WardrobeItemUpdate` —
+    the response schemas accept whatever the (already-coerced-by-the-mapper)
+    stored value is, never re-validating LLM output on the way out.
+    """
+    if value is not None and value not in allowed:
+        raise ValueError(f"{field_name} must be one of {allowed}, got {value!r}")
+    return value
+
+
+class PaletteColorSchema(BaseModel):
+    """One color in a deterministic CIELAB `color_palette` (RI-2)."""
+
+    lab: tuple[float, float, float]
+    hex: str
+    share: float
+    is_neutral: bool
+    name: str
 
 
 class WardrobeItemBase(BaseModel):
@@ -31,7 +60,14 @@ class WardrobeItemCreate(BaseModel):
 
 
 class WardrobeItemUpdate(BaseModel):
-    """Schema for manually updating wardrobe item tags."""
+    """Schema for manually updating wardrobe item tags.
+
+    RI-2 adds the user-correctable v2 attribute fields (texture, silhouette,
+    neckline, sleeve_length, statement_level, is_fullbody) — deliberately
+    NOT `llm_formality`, `color_palette`, `color_extraction_source`,
+    `attribute_confidence`, or `schema_version`, which are system-derived and
+    not user-editable.
+    """
 
     category: str | None = Field(None, max_length=100)
     color_primary: str | None = Field(None, max_length=50)
@@ -41,6 +77,38 @@ class WardrobeItemUpdate(BaseModel):
     occasion: list[str] | None = None
     purchase_price: float | None = Field(None, ge=0)
     brand: str | None = Field(None, max_length=100)
+
+    texture: str | None = Field(None, max_length=20)
+    silhouette: str | None = Field(None, max_length=20)
+    neckline: str | None = Field(None, max_length=20)
+    sleeve_length: str | None = Field(None, max_length=20)
+    statement_level: str | None = Field(None, max_length=20)
+    is_fullbody: bool | None = None
+
+    @field_validator("texture")
+    @classmethod
+    def _validate_texture(cls, v: str | None) -> str | None:
+        return _validate_enum_value(v, TEXTURE_VALUES, "texture")
+
+    @field_validator("silhouette")
+    @classmethod
+    def _validate_silhouette(cls, v: str | None) -> str | None:
+        return _validate_enum_value(v, SILHOUETTE_VALUES, "silhouette")
+
+    @field_validator("neckline")
+    @classmethod
+    def _validate_neckline(cls, v: str | None) -> str | None:
+        return _validate_enum_value(v, NECKLINE_VALUES, "neckline")
+
+    @field_validator("sleeve_length")
+    @classmethod
+    def _validate_sleeve_length(cls, v: str | None) -> str | None:
+        return _validate_enum_value(v, SLEEVE_LENGTH_VALUES, "sleeve_length")
+
+    @field_validator("statement_level")
+    @classmethod
+    def _validate_statement_level(cls, v: str | None) -> str | None:
+        return _validate_enum_value(v, STATEMENT_LEVEL_VALUES, "statement_level")
 
 
 class WardrobeItemStatusUpdate(BaseModel):
@@ -96,6 +164,20 @@ class WardrobeItemResponse(WardrobeItemBase):
     photos: list[WardrobeItemPhotoResponse] = []
     created_at: datetime
     updated_at: datetime
+
+    # Classifier schema v2 (RI-2). All optional so pre-RI-2 (`schema_version=1`)
+    # rows — which have `null` for every field below — still serialize cleanly.
+    texture: str | None = None
+    silhouette: str | None = None
+    neckline: str | None = None
+    sleeve_length: str | None = None
+    statement_level: str | None = None
+    llm_formality: int | None = None
+    is_fullbody: bool = False
+    color_palette: list[PaletteColorSchema] | None = None
+    color_extraction_source: str | None = None
+    attribute_confidence: dict[str, float] | None = None
+    schema_version: int = 1
 
     class Config:
         from_attributes = True

@@ -16,6 +16,11 @@ class UserEvent(Base):
     (not enforced at the DB level): item_added, item_corrected, outfit_shown,
     outfit_accepted, outfit_rejected, outfit_swapped, outfit_worn, style_dna_updated.
 
+    `item_corrected` (RI-2): emitted from `PUT /wardrobe/items/{id}` — one event
+    per corrected/confirmed v2 attribute field (texture, silhouette, neckline,
+    sleeve_length, statement_level, is_fullbody), payload
+    `{item_id, field, old_value, new_value, was_confirmation}`.
+
     Append-only: no update/delete CRUD, no PUT/PATCH route.
     """
 

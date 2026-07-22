@@ -66,3 +66,66 @@ def test_score_returns_top_confusions_for_mismatches():
     assert confusions[0]["ground_truth"] == "pants"
     assert confusions[0]["predicted"] == "jeans"
     assert confusions[0]["count"] == 3
+
+
+# ============================================================================
+# RI-2: v1-vs-v2 merge gate machinery
+# ============================================================================
+
+
+def test_score_accepts_explicit_fields_param_for_v2_shape_dims():
+    predictions = [
+        {"category": "shirt", "pattern": "solid", "sleeve_length": "long", "neckline": "crew"},
+        {"category": "shirt", "pattern": "solid", "sleeve_length": "short", "neckline": "v_neck"},
+    ]
+    ground_truth = [
+        {"category": "shirt", "pattern": "solid", "sleeve_length": "long", "neckline": "crew"},
+        {"category": "shirt", "pattern": "solid", "sleeve_length": "long", "neckline": "v_neck"},
+    ]
+
+    results = eval_tagging.score(
+        predictions, ground_truth, fields=["category", "pattern", "sleeve_length", "neckline"]
+    )
+
+    assert results["fields_scored"] == ["category", "pattern", "sleeve_length", "neckline"]
+    assert results["sleeve_length"]["accuracy"] == pytest.approx(0.5)
+    assert results["neckline"]["accuracy"] == pytest.approx(1.0)
+
+
+def test_score_defaults_to_ground_truth_fields_when_no_fields_given():
+    predictions = [{"category": "shirt", "pattern": "solid"}]
+    ground_truth = [{"category": "shirt", "pattern": "solid"}]
+
+    results = eval_tagging.score(predictions, ground_truth)
+
+    assert results["fields_scored"] == eval_tagging.GROUND_TRUTH_FIELDS
+
+
+def test_fields_for_schema_v1_never_includes_shape_dims():
+    ground_truth = [{"category": "shirt", "pattern": "solid", "sleeve_length": "long", "neckline": "crew"}]
+    fields = eval_tagging._fields_for_schema("v1", ground_truth)
+    assert "sleeve_length" not in fields
+    assert "neckline" not in fields
+    assert fields == eval_tagging.GROUND_TRUTH_FIELDS
+
+
+def test_fields_for_schema_v2_adds_shape_dims_only_when_present_in_ground_truth():
+    with_shape = [{"category": "shirt", "pattern": "solid", "sleeve_length": "long", "neckline": "crew"}]
+    without_shape = [{"category": "shirt", "pattern": "solid"}]
+
+    assert eval_tagging._fields_for_schema("v2", with_shape) == [
+        "category",
+        "pattern",
+        "sleeve_length",
+        "neckline",
+    ]
+    assert eval_tagging._fields_for_schema("v2", without_shape) == eval_tagging.GROUND_TRUTH_FIELDS
+
+
+def test_sleeve_length_and_neckline_shape_maps_have_no_unmapped_out_of_vocabulary_values():
+    from attreq_api.schemas.wardrobe_enums import NECKLINE_VALUES, SLEEVE_LENGTH_VALUES
+
+    for value in eval_tagging.SLEEVE_LENGTH_SHAPE_MAP.values():
+        assert value is None or value in SLEEVE_LENGTH_VALUES
+    for value in eval_tagging.NECKLINE_SHAPE_MAP.values():
+        assert value is None or value in NECKLINE_VALUES

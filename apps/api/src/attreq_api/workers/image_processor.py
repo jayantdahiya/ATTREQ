@@ -1,5 +1,6 @@
 """Image processing worker for wardrobe items."""
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -11,7 +12,9 @@ from attreq_api.services.ai.background_removal import (
     generate_processed_and_thumbnail,
 )
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
+from attreq_api.services.ai.color_extraction import extract_palette_safe
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.ai.schema_mapper import build_wardrobe_update_payload
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 logger = logging.getLogger(__name__)
@@ -50,26 +53,35 @@ async def process_wardrobe_image(
             # Step 2: Remove background + generate thumbnail (shared helper).
             # `classification_path` lives in a temp dir we own and must clean
             # up ourselves once classification is done.
-            classification_path, processed_image_url, thumbnail_url = (
+            classification_path, bg_removed_url, thumbnail_url = (
                 await generate_processed_and_thumbnail(
                     original_image_ref, user_id, log_ref=f"item {item_id}"
                 )
             )
+            # `bg_removed_url` is None iff background removal failed, in which
+            # case `classification_path` is `original_tmp`, not a
+            # background-removed image — pixel color extraction must not run
+            # against it (see color_extraction.py docstring).
+            bg_removal_succeeded = bg_removed_url is not None
             # Background removal failed -> fall back to the already-stored
             # original URL/key, never a freshly (and, for S3, presigned) one.
-            processed_image_url = processed_image_url or original_image_url
+            processed_image_url = bg_removed_url or original_image_url
 
             try:
-                # Step 3: Detect clothing attributes
-                try:
-                    detection_result = await clothing_detection_service.detect_clothing(
-                        classification_path
-                    )
-                    logger.info(
-                        f"Clothing detection completed for item {item_id}: {detection_result}"
-                    )
-                except Exception as e:
-                    logger.error(f"Clothing detection failed for item {item_id}: {str(e)}")
+                # Step 3: Detect clothing attributes and extract the pixel
+                # color palette concurrently — a failure in one must not
+                # affect the other.
+                detect_coro = clothing_detection_service.detect_clothing(classification_path)
+                palette_coro = extract_palette_safe(
+                    classification_path if bg_removal_succeeded else None,
+                    log_ref=f"item {item_id}",
+                )
+                detection_outcome, palette_outcome = await asyncio.gather(
+                    detect_coro, palette_coro, return_exceptions=True
+                )
+
+                if isinstance(detection_outcome, BaseException):
+                    logger.error(f"Clothing detection failed for item {item_id}: {str(detection_outcome)}")
                     detection_result = {
                         "category": None,
                         "color_primary": None,
@@ -80,6 +92,20 @@ async def process_wardrobe_image(
                         "detection_confidence": 0.0,
                         "processing_status": "failed",
                     }
+                else:
+                    detection_result = detection_outcome
+                    logger.info(
+                        f"Clothing detection completed for item {item_id}: {detection_result}"
+                    )
+
+                # `extract_palette_safe` never raises — it degrades internally
+                # to (None, "llm_fallback"). `isinstance` check here is a
+                # defensive backstop only.
+                if isinstance(palette_outcome, BaseException):
+                    logger.error(f"Color extraction task errored for item {item_id}: {str(palette_outcome)}")
+                    palette, color_extraction_source = None, "llm_fallback"
+                else:
+                    palette, color_extraction_source = palette_outcome
             finally:
                 cleanup_classification_tempdir(classification_path)
 
@@ -103,19 +129,13 @@ async def process_wardrobe_image(
             except Exception as e:
                 logger.error(f"Failed to add item {item_id} to Weaviate: {str(e)}")
 
-            update_data = {
-                "processed_image_url": processed_image_url,
-                "thumbnail_url": thumbnail_url,
-                "category": detection_result.get("category"),
-                "color_primary": detection_result.get("color_primary"),
-                "color_secondary": detection_result.get("color_secondary"),
-                "pattern": detection_result.get("pattern"),
-                "season": detection_result.get("season", []),
-                "occasion": detection_result.get("occasion", []),
-                "detection_confidence": detection_result.get("detection_confidence", 0.0),
-                "classification_source": detection_result.get("classification_source"),
-                "processing_status": "completed",
-            }
+            update_data = build_wardrobe_update_payload(
+                detection_result=detection_result,
+                palette=palette,
+                color_extraction_source=color_extraction_source,
+                processed_image_url=processed_image_url,
+                thumbnail_url=thumbnail_url,
+            )
 
             await wardrobe_crud.update(db, item_id, update_data)
             logger.info(f"Item {item_id} processing completed successfully")
