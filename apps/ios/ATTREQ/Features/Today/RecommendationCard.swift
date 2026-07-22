@@ -40,12 +40,24 @@ struct RecommendationCard: View {
         return "\(Int(weather.temp.rounded()))°C — \(weather.condition)"
     }
 
+    /// RI-4: template-composed one-line reason for this pick. Falls back to
+    /// an empty string for fixture JSON predating RI-4 (`explanation == nil`)
+    /// so `explanationLine` simply doesn't render rather than showing "nil".
+    private var explanationText: String? {
+        guard let explanation = suggestion.explanation, !explanation.isEmpty else { return nil }
+        return explanation
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             titleRow
                 .padding(.bottom, 14)
             collage
                 .padding(.bottom, 12)
+            if let explanationText {
+                explanationLine(explanationText)
+                    .padding(.bottom, 11)
+            }
             contextRow
                 .padding(.bottom, 11)
             Rectangle()
@@ -76,7 +88,38 @@ struct RecommendationCard: View {
                     .foregroundStyle(Theme.text)
             }
             Spacer(minLength: 10)
-            AttreqPill(matchText, variant: .muted)
+            VStack(alignment: .trailing, spacing: 6) {
+                // RI-4: distinct, non-error treatment for a hedged pick —
+                // never suppress the recommendation, just label it honestly.
+                if suggestion.isLowConfidence {
+                    AttreqPill("Experimental", variant: .clay)
+                } else {
+                    AttreqPill(matchText, variant: .muted)
+                }
+                if suggestion.isRediscovery {
+                    AttreqPill("Rediscover", variant: .gold)
+                }
+            }
+        }
+    }
+
+    /// RI-4: the composed explanation line, rendered under the collage.
+    /// Low-confidence picks get a dashed rule above the text (rather than
+    /// the pill row alone) so the hedge reads as a deliberate, calm signal —
+    /// not an error state.
+    private func explanationLine(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if suggestion.isLowConfidence {
+                Rectangle()
+                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .foregroundStyle(Theme.clay)
+                    .frame(height: 1)
+            }
+            Text(text)
+                .font(.attreqBody(13))
+                .foregroundStyle(suggestion.isLowConfidence ? Theme.clay : Theme.t2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("label-explanation")
         }
     }
 
@@ -85,13 +128,21 @@ struct RecommendationCard: View {
     /// 190pt collage: left tile 54% width full height, right column stacked
     /// 57% / remainder with 8pt gaps, all radius 16.
     private var collage: some View {
-        GeometryReader { geo in
+        // RI-4: a fullbody-anchored outfit has no bottom — the right column
+        // drops the "Bottom" tile entirely (rather than rendering it empty)
+        // and the left tile shows the fullbody item under a "Look" label.
+        let isFullbody = suggestion.fullbodyItem != nil
+        return GeometryReader { geo in
             HStack(spacing: 8) {
-                SuggestionGarmentTile(item: suggestion.topItem, tone: .top, label: "Top")
-                    .frame(width: geo.size.width * 0.54)
+                SuggestionGarmentTile(
+                    item: suggestion.primaryItem, tone: .top, label: isFullbody ? "Look" : "Top"
+                )
+                .frame(width: geo.size.width * 0.54)
                 VStack(spacing: 8) {
-                    SuggestionGarmentTile(item: suggestion.bottomItem, tone: .bottom, label: "Bottom")
-                        .frame(height: geo.size.height * 0.57)
+                    if !isFullbody {
+                        SuggestionGarmentTile(item: suggestion.bottomItem, tone: .bottom, label: "Bottom")
+                            .frame(height: geo.size.height * 0.57)
+                    }
                     SuggestionGarmentTile(item: suggestion.accessoryItem, tone: .accent, label: "Accent")
                         .frame(maxHeight: .infinity)
                 }
@@ -265,6 +316,12 @@ extension OutfitSuggestion {
                 imageUrl: nil,
                 thumbnailUrl: nil
             ),
+            fullbodyItemId: nil,
+            fullbodyItem: nil,
+            footwearItemId: nil,
+            footwearItem: nil,
+            outerwearItemId: nil,
+            outerwearItem: nil,
             accessoryItem: OutfitItemDetail(
                 id: "accessory-1",
                 category: "accessory",
@@ -283,7 +340,67 @@ extension OutfitSuggestion {
             ),
             weatherContext: weather,
             occasionContext: "Casual",
-            outfitIndex: 0
+            outfitIndex: 0,
+            explanation: "Cream + charcoal: strong neutral contrast + dialed in for casual",
+            confidence: "normal",
+            rediscovery: false,
+            rediscoveryItemId: nil
+        )
+    }
+
+    /// RI-4 fixture: a low-confidence, rediscovery-marked, fullbody-anchored
+    /// outfit — exercises every new client-visible state in one preview.
+    static var previewFullbodyRediscoveryFixture: OutfitSuggestion {
+        let weather = WeatherData(
+            temp: 12.0,
+            feelsLike: 10.0,
+            condition: "Rain",
+            description: "light rain",
+            humidity: 80,
+            windSpeed: 4.0,
+            icon: "10d"
+        )
+        return OutfitSuggestion(
+            topItemId: nil,
+            topItem: nil,
+            bottomItemId: nil,
+            bottomItem: nil,
+            fullbodyItemId: "dress-1",
+            fullbodyItem: OutfitItemDetail(
+                id: "dress-1",
+                category: "dress",
+                colorPrimary: "maroon",
+                pattern: "solid",
+                imageUrl: nil,
+                thumbnailUrl: nil
+            ),
+            footwearItemId: "boot-1",
+            footwearItem: OutfitItemDetail(
+                id: "boot-1",
+                category: "boot",
+                colorPrimary: "black",
+                pattern: nil,
+                imageUrl: nil,
+                thumbnailUrl: nil
+            ),
+            outerwearItemId: nil,
+            outerwearItem: nil,
+            accessoryItem: nil,
+            scores: OutfitScores(
+                colorHarmony: 0.4,
+                formality: 0.5,
+                preferenceBonus: 0.0,
+                styleDna: nil,
+                behaviour: nil,
+                total: 0.4
+            ),
+            weatherContext: weather,
+            occasionContext: "Casual",
+            outfitIndex: 1,
+            explanation: "Experimental pick — tell us what you think.",
+            confidence: "low",
+            rediscovery: true,
+            rediscoveryItemId: "dress-1"
         )
     }
 }
@@ -309,6 +426,17 @@ extension OutfitSuggestion {
                 lookNumber: 2,
                 title: "Quiet Hours",
                 isWearing: true,
+                isSubmittingFeedback: false,
+                onWear: {},
+                onSkip: {},
+                onLove: {},
+                onDismiss: {}
+            )
+            RecommendationCard(
+                suggestion: .previewFullbodyRediscoveryFixture,
+                lookNumber: 3,
+                title: "Not Worn In A While",
+                isWearing: false,
                 isSubmittingFeedback: false,
                 onWear: {},
                 onSkip: {},

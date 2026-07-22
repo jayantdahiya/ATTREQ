@@ -22,6 +22,9 @@ class OutfitCRUD:
         accessory_ids: list[UUID] | None = None,
         occasion_context: str | None = None,
         weather_context: dict | None = None,
+        footwear_item_id: UUID | None = None,
+        outerwear_item_id: UUID | None = None,
+        fullbody_item_id: UUID | None = None,
     ) -> Outfit:
         """Create a new outfit.
 
@@ -33,6 +36,9 @@ class OutfitCRUD:
             accessory_ids: List of accessory item UUIDs
             occasion_context: Occasion description
             weather_context: Weather data as dict
+            footwear_item_id: RI-4 — UUID of the footwear item
+            outerwear_item_id: RI-4 — UUID of the outerwear item
+            fullbody_item_id: RI-4 — UUID of the fullbody anchor item
 
         Returns:
             Created outfit
@@ -44,6 +50,9 @@ class OutfitCRUD:
             accessory_ids=accessory_ids,
             occasion_context=occasion_context,
             weather_context=weather_context,
+            footwear_item_id=footwear_item_id,
+            outerwear_item_id=outerwear_item_id,
+            fullbody_item_id=fullbody_item_id,
         )
 
         db.add(outfit)

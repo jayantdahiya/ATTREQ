@@ -2,7 +2,6 @@
 
 import json
 import logging
-import random
 from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -20,14 +19,7 @@ from attreq_api.services.recommendation.color_harmony import (
     harmony,
     is_functional_neutral,
 )
-from attreq_api.services.recommendation.context_scoring import calculate_context_score
 from attreq_api.services.recommendation.legacy_color_lab import legacy_palette_for_item
-from attreq_api.services.style_dna.color_families import color_family_for_name
-from attreq_api.services.style_dna.personal_color import apply_personal_color_adjustment
-from attreq_api.services.style_dna.scoring import (
-    calculate_behaviour_score,
-    calculate_style_dna_score,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +247,56 @@ def calculate_color_harmony_score(item1: WardrobeItem, item2: WardrobeItem) -> f
 # ============================================================================
 
 
+# RI-4 (launch-M3 section 3.2, satisfied here): extended with footwear/
+# outerwear substring keys so `_lookup_formality_level` (and, through it,
+# `composition._pick_best_slot_item`'s formality_fit term) can judge shoe/coat
+# formality the same way top/bottom formality is judged.
+FORMALITY_MAP = {
+    "suit": 3,
+    "blazer": 3,
+    "dress shirt": 3,
+    "dress pants": 3,
+    "dress shoe": 3,
+    "dress": 3,
+    "skirt": 2,
+    "blouse": 2,
+    "chinos": 2,
+    "coat": 2,
+    "boot": 2,
+    "jeans": 1,
+    "t-shirt": 1,
+    "shorts": 1,
+    "hoodie": 1,
+    "jacket": 1,
+    "sneaker": 1,
+    "sandal": 1,
+    "sweatpants": 0,
+    "athletic wear": 0,
+}
+
+
+def _lookup_formality_level(category: str | None, occasion: list[str] | None = None) -> int:
+    """Best-effort formality level (0-3) for one item's category + occasion
+    tags. Extracted out of `calculate_formality_score` so
+    `composition._pick_best_slot_item` (footwear/outerwear picks) can reuse
+    the exact same lookup rather than a second, drifting copy."""
+    category_lower = (category or "").lower()
+    level = 1  # Default to casual
+    for key, mapped_level in FORMALITY_MAP.items():
+        if key in category_lower:
+            level = mapped_level
+            break
+
+    if occasion:
+        occasion_lower = [occ.lower() for occ in occasion]
+        if "formal" in occasion_lower:
+            level = max(level, 3)
+        elif "business" in occasion_lower:
+            level = max(level, 2)
+
+    return level
+
+
 def calculate_formality_score(items: list[WardrobeItem]) -> float:
     """Ensure outfit items have similar formality level.
 
@@ -270,44 +312,8 @@ def calculate_formality_score(items: list[WardrobeItem]) -> float:
     Returns:
         Formality consistency score between 0 and 1
     """
-    # Define formality levels for categories
-    formality_map = {
-        "suit": 3,
-        "blazer": 3,
-        "dress shirt": 3,
-        "dress pants": 3,
-        "dress": 3,
-        "skirt": 2,
-        "blouse": 2,
-        "chinos": 2,
-        "jeans": 1,
-        "t-shirt": 1,
-        "shorts": 1,
-        "hoodie": 1,
-        "sweatpants": 0,
-        "athletic wear": 0,
-    }
-
     # Get formality levels for each item
-    formality_levels = []
-    for item in items:
-        category = (item.category or "").lower()
-
-        # Check if category matches any formality key
-        formality = 1  # Default to casual
-        for key, level in formality_map.items():
-            if key in category:
-                formality = level
-                break
-
-        # Also check occasion tags
-        if item.occasion:
-            if "formal" in [occ.lower() for occ in item.occasion]:
-                formality = max(formality, 3)
-            elif "business" in [occ.lower() for occ in item.occasion]:
-                formality = max(formality, 2)
-
-        formality_levels.append(formality)
+    formality_levels = [_lookup_formality_level(item.category, item.occasion) for item in items]
 
     # Calculate variance in formality levels
     if not formality_levels:
@@ -583,7 +589,7 @@ async def generate_daily_outfits(
         # Fall back to weather-filtered items if occasion filtering is too restrictive
         occasion_filtered = weather_filtered
 
-    # Step 4: Get recently worn items
+    # Step 4: Get recently worn items (14-day hard exclusion, unchanged)
     recently_worn = await get_recently_worn_items(db, user_id, days=14)
 
     # Step 5: Get user preferences
@@ -599,184 +605,115 @@ async def generate_daily_outfits(
         except (json.JSONDecodeError, TypeError):
             style_dna = None
 
-    # Separate items by category
-    tops = [item for item in occasion_filtered if item.category and "top" in item.category.lower()]
-    bottoms = [
-        item for item in occasion_filtered if item.category and "bottom" in item.category.lower()
-    ]
-    accessories = [
-        item
-        for item in occasion_filtered
-        if item.category
-        and any(acc in item.category.lower() for acc in ["accessory", "shoe", "bag"])
-    ]
+    # Step 6: Load recent `shown` events (RI-4 rotation + cold-start signal).
+    # 90-day lookback: generous enough to cover "has this item ever been
+    # shown before" for cold-start eligibility; `build_rotation_context`
+    # internally restricts to the real 7-day item / 14-day combo windows, so
+    # a wider raw window here does not loosen anti-repetition.
+    shown_events = await _load_recent_shown_events(db, user_id, days=90)
 
-    # If no clear categories, try to infer
-    if not tops and not bottoms:
-        # Use all items as potential tops or bottoms
-        tops = occasion_filtered[: len(occasion_filtered) // 2]
-        bottoms = occasion_filtered[len(occasion_filtered) // 2 :]
+    # Step 7: Delegate to the PURE composition core (no DB access below this
+    # line) — see services/recommendation/composition.py.
+    from attreq_api.services.recommendation.composition import compose_daily_outfits
 
-    logger.info(
-        f"Available items: {len(tops)} tops, {len(bottoms)} bottoms, {len(accessories)} accessories"
+    candidates = compose_daily_outfits(
+        occasion_filtered,
+        weather,
+        occasion,
+        recently_worn,
+        shown_events,
+        style_dna,
+        k=num_suggestions,
+        now=now,
+        preferred_colors=user_preferences.get("preferred_colors"),
     )
 
-    # Step 6: Generate outfit combinations
-    outfit_candidates = []
+    suggestions = [_candidate_to_payload(c) for c in candidates]
 
-    for bottom in bottoms:
-        # Skip recently worn items
-        if bottom.id in recently_worn:
+    logger.info(f"Generated {len(suggestions)} outfit suggestions")
+
+    return suggestions
+
+
+async def _load_recent_shown_events(
+    db: AsyncSession, user_id: UUID, days: int = 90
+) -> list[dict[str, Any]]:
+    """Load `shown`-event rows into the plain-dict shape
+    `composition.build_rotation_context` / `compose_daily_outfits` expect:
+    `{"date": date, "item_ids": [UUID, ...]}` — core garment ids only
+    (top/bottom/fullbody; footwear/outerwear/accessory are not part of the
+    anti-repetition combo signal).
+    """
+    from attreq_api.models.recommendation_event import RecommendationEvent
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query = select(RecommendationEvent).where(
+        and_(
+            RecommendationEvent.user_id == user_id,
+            RecommendationEvent.event_type == "shown",
+            RecommendationEvent.created_at >= cutoff,
+        )
+    )
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        payload = row.outfit_payload or {}
+        raw_ids = [
+            payload.get("top_item_id"),
+            payload.get("bottom_item_id"),
+            payload.get("fullbody_item_id"),
+        ]
+        item_ids = [UUID(raw_id) for raw_id in raw_ids if raw_id]
+        if not item_ids:
             continue
+        event_date = row.created_at.date() if row.created_at else date.today()
+        events.append({"date": event_date, "item_ids": item_ids})
 
-        for top in tops:
-            # Skip recently worn items
-            if top.id in recently_worn:
-                continue
+    return events
 
-            # Skip same item
-            if top.id == bottom.id:
-                continue
 
-            # Calculate scores
-            harmony_result = calculate_color_harmony_detailed(top, bottom)
-            color_score = harmony_result.score
+def _item_detail(item: WardrobeItem | None) -> dict[str, Any] | None:
+    if item is None:
+        return None
+    return {
+        "id": str(item.id),
+        "category": item.category,
+        "color_primary": item.color_primary,
+        "pattern": item.pattern,
+        "image_url": item.processed_image_url or item.original_image_url,
+        "thumbnail_url": item.thumbnail_url,
+    }
 
-            # RI-3: personal-color + color-affinity adjustment, top slot only
-            # (bottoms excluded per the finalized plan), jointly clamped to a
-            # single ±10% envelope (C6) rather than two independent ±10%
-            # adjustments that would compound to ~21%. Safe to call
-            # unconditionally — returns `color_score` unchanged when
-            # `style_dna` is None/empty or confidence is low.
-            top_palette = _load_palette(top)
-            top_dominant_lab = top_palette[0].lab if top_palette else None
-            top_color_family = color_family_for_name(top.color_primary)
-            color_score = apply_personal_color_adjustment(
-                color_score, top_dominant_lab, top_color_family, style_dna
-            )
 
-            # RI-3: context_score occupies the old formality-slot's role in the
-            # weighted sum below (0.55 occasion / 0.35 weather / 0.10 time) —
-            # it is NOT blended alongside a separate formality term, which
-            # would double-count formality (occasion_fit already folds in
-            # formality consistency between the two items).
-            context_score, context_detail = calculate_context_score(
-                [top, bottom], occasion, weather, now=now
-            )
+def _candidate_to_payload(candidate: Any) -> dict[str, Any]:
+    """Convert a `composition.OutfitCandidate` into the raw candidate dict
+    shape the endpoint/telemetry/schema layer expects. Keeps the pre-RI-4
+    dict-shape contract (RI-1's `bulk_create_shown` reads this directly) while
+    adding the new fullbody/footwear/outerwear/explanation/confidence/
+    rediscovery fields.
+    """
+    scores = dict(candidate.score_components)
+    scores["color_harmony_branch"] = candidate.color_harmony_branch
 
-            # Preference bonus
-            preference_bonus = 0.0
-            if user_preferences["preferred_colors"]:
-                if (
-                    top.color_primary
-                    and top.color_primary.lower() in user_preferences["preferred_colors"]
-                ):
-                    preference_bonus += 0.1
-                if (
-                    bottom.color_primary
-                    and bottom.color_primary.lower() in user_preferences["preferred_colors"]
-                ):
-                    preference_bonus += 0.1
-
-            # Combined score — Style DNA weighted if profile exists
-            style_dna_score = 0.0
-            behaviour_score = 0.0
-            if style_dna:
-                style_dna_score = calculate_style_dna_score([top, bottom], style_dna)
-                behaviour_score = calculate_behaviour_score(
-                    [top, bottom], style_dna.get("behaviour_weights", {})
-                )
-                total_score = (
-                    color_score * 0.20
-                    + context_score * 0.20
-                    + style_dna_score * 0.40
-                    + behaviour_score * 0.20
-                )
-            else:
-                total_score = (color_score * 0.4) + (context_score * 0.4) + (preference_bonus * 0.2)
-
-            # Select an accessory if available
-            accessory = None
-            if accessories:
-                # Pick a random accessory that wasn't recently worn
-                available_accessories = [acc for acc in accessories if acc.id not in recently_worn]
-                if available_accessories:
-                    accessory = random.choice(available_accessories)
-
-            outfit_candidates.append(
-                {
-                    "top_item_id": str(top.id),
-                    "top_item": {
-                        "id": str(top.id),
-                        "category": top.category,
-                        "color_primary": top.color_primary,
-                        "pattern": top.pattern,
-                        "image_url": top.processed_image_url or top.original_image_url,
-                        "thumbnail_url": top.thumbnail_url,
-                    },
-                    "bottom_item_id": str(bottom.id),
-                    "bottom_item": {
-                        "id": str(bottom.id),
-                        "category": bottom.category,
-                        "color_primary": bottom.color_primary,
-                        "pattern": bottom.pattern,
-                        "image_url": bottom.processed_image_url or bottom.original_image_url,
-                        "thumbnail_url": bottom.thumbnail_url,
-                    },
-                    "accessory_item": (
-                        {
-                            "id": str(accessory.id),
-                            "category": accessory.category,
-                            "color_primary": accessory.color_primary,
-                            "image_url": accessory.processed_image_url
-                            or accessory.original_image_url,
-                            "thumbnail_url": accessory.thumbnail_url,
-                        }
-                        if accessory
-                        else None
-                    ),
-                    "scores": {
-                        "color_harmony": round(color_score, 2),
-                        "color_harmony_branch": harmony_result.branch,
-                        # RI-3: this key still means "the formality-ish context
-                        # slot" — its value is now `context_score`
-                        # (0.55*occasion_fit + 0.35*weather_score + 0.10*time_score),
-                        # not the raw formality-variance score. See
-                        # `context_scoring.py` module docstring.
-                        "formality": round(context_score, 2),
-                        "occasion_fit": round(context_detail["occasion_fit"], 2),
-                        "weather_score": round(context_detail["weather_score"], 2),
-                        "time_score": round(context_detail["time_score"], 2),
-                        "preference_bonus": round(preference_bonus, 2),
-                        "style_dna": round(style_dna_score, 2),
-                        "behaviour": round(behaviour_score, 2),
-                        "total": round(total_score, 2),
-                    },
-                    "weather_context": weather,
-                    "occasion_context": occasion,
-                }
-            )
-
-    # Step 7: Sort by score and return top N unique combinations
-    outfit_candidates.sort(key=lambda x: x["scores"]["total"], reverse=True)
-
-    # Select diverse suggestions (avoid same items in multiple outfits)
-    selected_outfits = []
-    used_items = set()
-
-    for outfit in outfit_candidates:
-        top_id = outfit["top_item_id"]
-        bottom_id = outfit["bottom_item_id"]
-
-        # Check if items already used
-        if top_id not in used_items and bottom_id not in used_items:
-            selected_outfits.append(outfit)
-            used_items.add(top_id)
-            used_items.add(bottom_id)
-
-            if len(selected_outfits) >= num_suggestions:
-                break
-
-    logger.info(f"Generated {len(selected_outfits)} outfit suggestions")
-
-    return selected_outfits
+    return {
+        "top_item_id": str(candidate.top_item.id) if candidate.top_item else None,
+        "top_item": _item_detail(candidate.top_item),
+        "bottom_item_id": str(candidate.bottom_item.id) if candidate.bottom_item else None,
+        "bottom_item": _item_detail(candidate.bottom_item),
+        "fullbody_item_id": str(candidate.fullbody_item.id) if candidate.fullbody_item else None,
+        "fullbody_item": _item_detail(candidate.fullbody_item),
+        "footwear_item_id": str(candidate.footwear_item.id) if candidate.footwear_item else None,
+        "footwear_item": _item_detail(candidate.footwear_item),
+        "outerwear_item_id": str(candidate.outerwear_item.id) if candidate.outerwear_item else None,
+        "outerwear_item": _item_detail(candidate.outerwear_item),
+        "accessory_item": _item_detail(candidate.accessory_item),
+        "scores": scores,
+        "weather_context": candidate.weather,
+        "occasion_context": candidate.occasion,
+        "explanation": candidate.explanation,
+        "confidence": candidate.confidence,
+        "rediscovery": candidate.rediscovery,
+        "rediscovery_item_id": candidate.rediscovery_item_id,
+    }

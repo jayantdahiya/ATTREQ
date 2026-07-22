@@ -400,11 +400,15 @@ final class TodayViewModel {
 
     /// Create-or-reuse: one outfit row per suggestion per session (RN
     /// `persistedOutfits` keyed `${top_item_id}:${bottom_item_id}`).
+    ///
+    /// RI-4: a fullbody-anchored suggestion has no top/bottom ids — falls
+    /// back to `fullbodyItemId` (unique per suggestion either way, so the
+    /// create-or-reuse semantics are unchanged).
     private func persistedOutfitId(
         for suggestion: OutfitSuggestion,
         using outfitsRepository: OutfitsRepository
     ) async throws -> String {
-        let key = "\(suggestion.topItemId):\(suggestion.bottomItemId)"
+        let key = "\(suggestion.topItemId ?? "-"):\(suggestion.bottomItemId ?? "-"):\(suggestion.fullbodyItemId ?? "-")"
         if let existing = persistedOutfits[key] {
             return existing
         }

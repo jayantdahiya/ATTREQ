@@ -72,6 +72,33 @@ async def create_outfit(
                     detail=f"Accessory item {acc_id} not found",
                 )
 
+    # RI-4: verify footwear/outerwear/fullbody slots the same way as top/bottom
+    # above — without this, an accepted footwear/outerwear/fullbody outfit
+    # would silently drop those items instead of 404ing on a bad/unowned id.
+    if outfit_data.footwear_item_id:
+        footwear_item = await wardrobe_crud.get_by_id(db, outfit_data.footwear_item_id, current_user.id)
+        if not footwear_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Footwear item {outfit_data.footwear_item_id} not found",
+            )
+
+    if outfit_data.outerwear_item_id:
+        outerwear_item = await wardrobe_crud.get_by_id(db, outfit_data.outerwear_item_id, current_user.id)
+        if not outerwear_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Outerwear item {outfit_data.outerwear_item_id} not found",
+            )
+
+    if outfit_data.fullbody_item_id:
+        fullbody_item = await wardrobe_crud.get_by_id(db, outfit_data.fullbody_item_id, current_user.id)
+        if not fullbody_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Fullbody item {outfit_data.fullbody_item_id} not found",
+            )
+
     # Create outfit
     outfit = await outfit_crud.create(
         db=db,
@@ -80,6 +107,9 @@ async def create_outfit(
         bottom_item_id=outfit_data.bottom_item_id,
         accessory_ids=outfit_data.accessory_ids,
         occasion_context=outfit_data.occasion_context,
+        footwear_item_id=outfit_data.footwear_item_id,
+        outerwear_item_id=outfit_data.outerwear_item_id,
+        fullbody_item_id=outfit_data.fullbody_item_id,
     )
 
     logger.info(f"Outfit {outfit.id} created by user {current_user.id}")

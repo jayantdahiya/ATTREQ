@@ -10,6 +10,7 @@ from attreq_api.services.recommendation.algorithm import (
     get_recently_worn_items,
     get_user_preference_weights,
 )
+from attreq_api.services.recommendation.composition import compose_daily_outfits
 
 __all__ = [
     "filter_items_by_weather",
@@ -20,4 +21,5 @@ __all__ = [
     "get_user_preference_weights",
     "find_compatible_items",
     "generate_daily_outfits",
+    "compose_daily_outfits",
 ]

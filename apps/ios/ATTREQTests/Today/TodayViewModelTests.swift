@@ -395,6 +395,10 @@ struct TodayViewModelTests {
         #expect(requests[1].method == "POST")
         #expect(requests[1].path == "/api/v1/outfits")
         let createBody = try Self.json(requests[1].body)
+        // RI-4 outfit slots (footwear/outerwear/fullbody) are `nil` for this
+        // top+bottom-only suggestion — `JSONEncoder`'s synthesized
+        // `Encodable` conformance OMITS nil Optional keys entirely (it does
+        // not encode `null`), so the wire body is unchanged from pre-RI-4.
         #expect(createBody == [
             "top_item_id": "t-1",
             "bottom_item_id": "b-1",

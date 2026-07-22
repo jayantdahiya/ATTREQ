@@ -64,7 +64,12 @@ async def get_daily_suggestions(
         HTTPException: If user has insufficient wardrobe items or no location available
     """
     today = date.today().isoformat()
-    cache_key = f"daily_suggestions:{current_user.id}:{today}:{occasion}"
+    # v2 (RI-4): the cached payload shape changed (fullbody/footwear/outerwear
+    # slots, explanation/confidence/rediscovery) — bumping the key namespace
+    # retires every pre-deploy cache entry instead of 500ing on
+    # `DailySuggestionsResponse(**cached)` for up to 24h per user. Must match
+    # `services/cache/invalidation.py::invalidate_daily_suggestions`.
+    cache_key = f"daily_suggestions:v2:{current_user.id}:{today}:{occasion}"
 
     # Step 1: Check cache (unless force refresh)
     if not force_refresh:

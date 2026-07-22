@@ -126,6 +126,10 @@ def build_outfit(*, user_id: uuid.UUID, top_item_id: uuid.UUID | None = None, bo
         "worn_date": None,
         "created_at": timestamp,
         "updated_at": timestamp,
+        # RI-4 outfit slots.
+        "footwear_item_id": overrides.get("footwear_item_id"),
+        "outerwear_item_id": overrides.get("outerwear_item_id"),
+        "fullbody_item_id": overrides.get("fullbody_item_id"),
     }
     defaults.update(overrides)
     return Outfit(**defaults)

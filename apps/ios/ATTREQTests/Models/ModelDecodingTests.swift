@@ -303,8 +303,8 @@ struct ModelDecodingTests {
         #expect(response.weather.description == "clear sky")
 
         let suggestion = try #require(response.suggestions.first)
-        #expect(suggestion.topItem.colorPrimary == "navy")
-        #expect(suggestion.bottomItem.imageUrl == nil)
+        #expect(suggestion.topItem?.colorPrimary == "navy")
+        #expect(suggestion.bottomItem?.imageUrl == nil)
         #expect(suggestion.accessoryItem == nil)
         #expect(suggestion.scores.colorHarmony == 0.82)
         #expect(suggestion.scores.styleDna == nil)

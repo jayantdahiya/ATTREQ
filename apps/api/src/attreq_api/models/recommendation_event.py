@@ -45,6 +45,14 @@ class RecommendationEvent(Base):
     # {weather: {...}, occasion: str, date: "YYYY-MM-DD"}
     context = Column(JSONB, nullable=True)
 
+    # RI-4: the composed template explanation and confidence hedge shown to
+    # the user for this candidate at generation time. Only ever set on
+    # `shown` rows (the payload actually rendered) — feedback rows copy them
+    # from the originating `shown` row for self-description, same as
+    # `outfit_payload`/`context`.
+    explanation = Column(Text, nullable=True)
+    confidence = Column(String(10), nullable=True)  # "low" | "normal"
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     def __repr__(self) -> str:

@@ -118,6 +118,26 @@ class WardrobeItem(Base):
         cascade="all, delete-orphan",
     )
 
+    # RI-4 outfit slots — mirrors the top/bottom relationship style above.
+    outfits_as_footwear = relationship(
+        "Outfit",
+        foreign_keys="Outfit.footwear_item_id",
+        back_populates="footwear_item",
+        cascade="all, delete-orphan",
+    )
+    outfits_as_outerwear = relationship(
+        "Outfit",
+        foreign_keys="Outfit.outerwear_item_id",
+        back_populates="outerwear_item",
+        cascade="all, delete-orphan",
+    )
+    outfits_as_fullbody = relationship(
+        "Outfit",
+        foreign_keys="Outfit.fullbody_item_id",
+        back_populates="fullbody_item",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return (
             f"<WardrobeItem(id={self.id}, user_id={self.user_id}, "

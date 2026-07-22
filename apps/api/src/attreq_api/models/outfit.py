@@ -32,6 +32,19 @@ class Outfit(Base):
     )
     accessory_ids = Column(ARRAY(UUID), nullable=True)  # Array of wardrobe item IDs
 
+    # RI-4 outfit slots (launch-M3 footwear/outerwear + the fullbody anchor).
+    # A fullbody outfit sets `fullbody_item_id` and leaves top/bottom null —
+    # it never coexists with a bottom (see `services/recommendation/composition.py`).
+    footwear_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("wardrobe_items.id", ondelete="SET NULL"), nullable=True
+    )
+    outerwear_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("wardrobe_items.id", ondelete="SET NULL"), nullable=True
+    )
+    fullbody_item_id = Column(
+        UUID(as_uuid=True), ForeignKey("wardrobe_items.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Outfit metadata
     worn_date = Column(Date, nullable=True, index=True)
     feedback_score = Column(Integer, nullable=True)  # -1 (dislike), 0 (neutral), 1 (like)
@@ -51,6 +64,15 @@ class Outfit(Base):
     )
     bottom_item = relationship(
         "WardrobeItem", foreign_keys=[bottom_item_id], back_populates="outfits_as_bottom"
+    )
+    footwear_item = relationship(
+        "WardrobeItem", foreign_keys=[footwear_item_id], back_populates="outfits_as_footwear"
+    )
+    outerwear_item = relationship(
+        "WardrobeItem", foreign_keys=[outerwear_item_id], back_populates="outfits_as_outerwear"
+    )
+    fullbody_item = relationship(
+        "WardrobeItem", foreign_keys=[fullbody_item_id], back_populates="outfits_as_fullbody"
     )
 
     def __repr__(self) -> str:

@@ -189,8 +189,8 @@ struct RecommendationsRepositoryTests {
         let response = try await Self.makeRepository().daily()
 
         #expect(response.suggestions.map(\.topItemId) == ["t-1", "t-2"])
-        #expect(response.suggestions[0].topItem.colorPrimary == "navy")
-        #expect(response.suggestions[0].bottomItem.thumbnailUrl == "/uploads/b-1-thumb.jpg")
+        #expect(response.suggestions[0].topItem?.colorPrimary == "navy")
+        #expect(response.suggestions[0].bottomItem?.thumbnailUrl == "/uploads/b-1-thumb.jpg")
         #expect(response.suggestions[0].accessoryItem == nil)
         #expect(response.suggestions[0].scores.total == 0.86)
         #expect(response.suggestions[0].weatherContext.temp == 21.5)

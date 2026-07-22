@@ -31,7 +31,11 @@ async def invalidate_daily_suggestions(user_id: UUID) -> int:
     cleared_count = 0
 
     for occasion in DAILY_SUGGESTION_OCCASIONS:
-        cache_key = f"daily_suggestions:{user_id}:{today}:{occasion}"
+        # v2: RI-4 changed the cached payload shape (fullbody/footwear/
+        # outerwear slots, explanation/confidence/rediscovery) — must match
+        # the key the daily-suggestions endpoint writes/reads (see that
+        # module's docstring on why the version bump exists).
+        cache_key = f"daily_suggestions:v2:{user_id}:{today}:{occasion}"
         if await redis_cache.delete(cache_key):
             cleared_count += 1
 

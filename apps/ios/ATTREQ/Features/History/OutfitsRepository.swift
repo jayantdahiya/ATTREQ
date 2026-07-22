@@ -20,33 +20,52 @@ import Foundation
 
 /// Request body for `POST /outfits` (backend `OutfitCreate`). Encoded with
 /// `.convertToSnakeCase` (`top_item_id`, `accessory_ids`, ...).
+///
+/// RI-4 adds `footwear_item_id`/`outerwear_item_id`/`fullbody_item_id` —
+/// without sending these, an accepted footwear/outerwear/fullbody outfit
+/// would silently drop those items server-side (see `endpoints/outfits.py
+/// ::create_outfit`, which now validates + persists all three the same way
+/// it already does for top/bottom).
 struct OutfitCreateRequest: Codable, Sendable, Equatable {
     var topItemId: String?
     var bottomItemId: String?
     var accessoryIds: [String]?
     var occasionContext: String?
+    var footwearItemId: String?
+    var outerwearItemId: String?
+    var fullbodyItemId: String?
 
     init(
         topItemId: String? = nil,
         bottomItemId: String? = nil,
         accessoryIds: [String]? = nil,
-        occasionContext: String? = nil
+        occasionContext: String? = nil,
+        footwearItemId: String? = nil,
+        outerwearItemId: String? = nil,
+        fullbodyItemId: String? = nil
     ) {
         self.topItemId = topItemId
         self.bottomItemId = bottomItemId
         self.accessoryIds = accessoryIds
         self.occasionContext = occasionContext
+        self.footwearItemId = footwearItemId
+        self.outerwearItemId = outerwearItemId
+        self.fullbodyItemId = fullbodyItemId
     }
 
     /// RN `outfitsApi.createFromSuggestion` body shape: top/bottom ids,
     /// `accessory_ids` as `[accessory.id]` when present or `[]` (never
-    /// omitted), and the suggestion's occasion.
+    /// omitted), and the suggestion's occasion. RI-4: also passes through
+    /// whichever of footwear/outerwear/fullbody the suggestion carries.
     init(suggestion: OutfitSuggestion) {
         self.init(
             topItemId: suggestion.topItemId,
             bottomItemId: suggestion.bottomItemId,
             accessoryIds: suggestion.accessoryItem.map { [$0.id] } ?? [],
-            occasionContext: suggestion.occasionContext
+            occasionContext: suggestion.occasionContext,
+            footwearItemId: suggestion.footwearItemId,
+            outerwearItemId: suggestion.outerwearItemId,
+            fullbodyItemId: suggestion.fullbodyItemId
         )
     }
 }

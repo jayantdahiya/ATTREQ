@@ -49,6 +49,13 @@ class RecommendationEventCRUD:
             outfit_payload = {
                 "top_item_id": candidate.get("top_item_id"),
                 "bottom_item_id": candidate.get("bottom_item_id"),
+                # RI-4: fullbody/footwear/outerwear slots — `None` for
+                # pre-RI-4-shaped candidate dicts (`.get` defaults), so this
+                # stays backward compatible with any caller that hasn't been
+                # updated to the new composition.OutfitCandidate shape.
+                "fullbody_item_id": candidate.get("fullbody_item_id"),
+                "footwear_item_id": candidate.get("footwear_item_id"),
+                "outerwear_item_id": candidate.get("outerwear_item_id"),
                 "accessory_item_id": accessory_item.get("id"),
                 "scores": candidate.get("scores", {}),
             }
@@ -60,6 +67,11 @@ class RecommendationEventCRUD:
                 outfit_payload=outfit_payload,
                 event_type="shown",
                 context=context,
+                # RI-4: the composed explanation/confidence hedge shown to
+                # the user, captured on the same telemetry row as the score
+                # breakdown. `None` for candidates that predate RI-4.
+                explanation=candidate.get("explanation"),
+                confidence=candidate.get("confidence"),
             )
             db.add(event)
             events.append(event)
