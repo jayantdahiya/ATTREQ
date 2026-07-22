@@ -223,22 +223,28 @@ async def _bulk_seed_wardrobe(
 
 async def update_behaviour_weights(
     db: AsyncSession, user_id: uuid.UUID, outfit_id: uuid.UUID, signal: str
-) -> None:
+) -> bool:
     """Update behaviour_weights in style_preferences JSON based on feedback signal.
 
     signal: "liked" | "disliked" | "worn"
+
+    Returns:
+        True only when the weights were actually mutated and committed; False on
+        every early-return (no user, no style_preferences, no outfit, no items).
+        Callers use this to decide whether to emit a `style_dna_updated` user event —
+        this is a persistence helper, not scoring/algorithm logic.
     """
     from sqlalchemy import select
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.style_preferences:
-        return
+        return False
 
     try:
         style_dna = json.loads(user.style_preferences)
     except (json.JSONDecodeError, TypeError):
-        return
+        return False
 
     # Load outfit items
     from attreq_api.models.outfit import Outfit
@@ -246,7 +252,7 @@ async def update_behaviour_weights(
     outfit_result = await db.execute(select(Outfit).where(Outfit.id == outfit_id))
     outfit = outfit_result.scalar_one_or_none()
     if not outfit:
-        return
+        return False
 
     from attreq_api.models.wardrobe import WardrobeItem as WI
 
@@ -254,7 +260,7 @@ async def update_behaviour_weights(
         i for i in [outfit.top_item_id, outfit.bottom_item_id] if i is not None
     ]
     if not item_ids:
-        return
+        return False
 
     items_result = await db.execute(select(WI).where(WI.id.in_(item_ids)))
     items = items_result.scalars().all()
@@ -289,3 +295,5 @@ async def update_behaviour_weights(
         .values(style_preferences=json.dumps(style_dna))
     )
     await db.commit()
+
+    return True

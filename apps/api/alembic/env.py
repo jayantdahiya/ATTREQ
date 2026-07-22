@@ -8,7 +8,14 @@ from alembic import context
 
 # Import our models and Base
 from attreq_api.config.database import Base
-from attreq_api.models import outfit, user, wardrobe  # noqa: F401
+from attreq_api.models import (  # noqa: F401
+    outfit,
+    recommendation_event,
+    style_dna,
+    user,
+    user_event,
+    wardrobe,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

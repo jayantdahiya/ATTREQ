@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from attreq_api.api.v1.deps import get_current_active_user
 from attreq_api.config.database import get_db
 from attreq_api.crud.outfit import outfit_crud
+from attreq_api.crud.user_event import user_event_crud
 from attreq_api.crud.wardrobe import wardrobe_crud
 from attreq_api.models.user import User
 from attreq_api.schemas.outfit import (
@@ -218,10 +219,28 @@ async def mark_outfit_worn(
 
     logger.info(f"Outfit {outfit_id} marked as worn by user {current_user.id}")
 
+    # Emit outfit_worn telemetry — best-effort, must never break the wear flow.
+    try:
+        await user_event_crud.create(
+            db,
+            user_id=current_user.id,
+            event_type="outfit_worn",
+            payload={"outfit_id": str(outfit_id), "worn_date": wear_data.worn_date.isoformat()},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to emit outfit_worn event: {e}")
+
     # Update Style DNA behaviour weights based on worn signal
     try:
         from attreq_api.services.style_dna.style_dna_service import update_behaviour_weights
-        await update_behaviour_weights(db, current_user.id, outfit_id, signal="worn")
+        mutated = await update_behaviour_weights(db, current_user.id, outfit_id, signal="worn")
+        if mutated:
+            await user_event_crud.create(
+                db,
+                user_id=current_user.id,
+                event_type="style_dna_updated",
+                payload={"signal": "worn", "outfit_id": str(outfit_id)},
+            )
     except Exception as e:
         logger.warning(f"Failed to update behaviour weights for worn outfit: {e}")
 
@@ -272,7 +291,14 @@ async def submit_outfit_feedback(
         try:
             from attreq_api.services.style_dna.style_dna_service import update_behaviour_weights
             signal = "liked" if feedback.feedback_score == 1 else "disliked"
-            await update_behaviour_weights(db, current_user.id, outfit_id, signal=signal)
+            mutated = await update_behaviour_weights(db, current_user.id, outfit_id, signal=signal)
+            if mutated:
+                await user_event_crud.create(
+                    db,
+                    user_id=current_user.id,
+                    event_type="style_dna_updated",
+                    payload={"signal": signal, "outfit_id": str(outfit_id)},
+                )
         except Exception as e:
             logger.warning(f"Failed to update behaviour weights for feedback: {e}")
 

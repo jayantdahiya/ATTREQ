@@ -116,6 +116,13 @@ docstring-code-line-length = 88
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# RI-1: the new `db_session`/`real_user` fixtures (tests/conftest.py) use the module-
+# level `engine` singleton (config/database.py), whose asyncpg connection pool binds
+# to whichever event loop first touches it. pytest-asyncio's default is a fresh event
+# loop per test function, which breaks that pool on the second real-DB test ("attached
+# to a different loop"). Session-scoped loops keep the whole run on one loop.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
