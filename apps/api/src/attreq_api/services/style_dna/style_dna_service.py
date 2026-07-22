@@ -19,6 +19,11 @@ from attreq_api.models.wardrobe import WardrobeItem
 from attreq_api.services.ai.classifier_factory import get_classifier
 from attreq_api.services.storage import get_storage
 from attreq_api.services.storage.base import ALLOWED_EXTENSIONS, get_file_extension
+from attreq_api.services.style_dna.color_families import (
+    bump_affinity,
+    color_family_for_name,
+    seed_color_affinity,
+)
 from attreq_api.services.style_dna.prompts import EXTRACTION_PROMPT, SYNTHESIS_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -154,8 +159,12 @@ async def process_style_photos(
     ]
     seeded_count = await _bulk_seed_wardrobe(db, user.id, all_detected_items)
 
-    # 7. Write synthesized Style DNA to user.style_preferences
-    # 8. Update onboarding_step
+    # 7. Seed the RI-3 color-affinity vector from the quiz-derived color_palette
+    # (dominant/accent/avoids), before persisting.
+    style_dna["color_affinity"] = seed_color_affinity(style_dna)
+
+    # 8. Write synthesized Style DNA to user.style_preferences
+    # 9. Update onboarding_step
     new_step = "review" if not user.onboarding_completed else user.onboarding_step
     await db.execute(
         update(User)
@@ -304,6 +313,75 @@ async def update_behaviour_weights(
             pattern_likes[pat] = round(
                 max(0.0, min(1.0, pattern_likes.get(pat, 0.5) + delta)), 4
             )
+
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(style_preferences=json.dumps(style_dna))
+    )
+    await db.commit()
+
+    return True
+
+
+async def update_color_affinity(
+    db: AsyncSession, user_id: uuid.UUID, outfit_id: uuid.UUID, signal: str
+) -> bool:
+    """Update the RI-3 `color_affinity` vector in `style_preferences` JSON from a
+    feedback signal (RI-3, Task 7). Same shape and same call sites as
+    `update_behaviour_weights` above (called alongside it, not instead of it) —
+    duplicated rather than shared because the two update different JSON keys
+    with different deltas/clamps and `update_behaviour_weights` is explicitly
+    left untouched by this milestone.
+
+    signal: "liked" | "disliked" | "worn"
+
+    Returns:
+        True only when the affinity vector was actually mutated and committed;
+        False on every early-return (no user, no style_preferences, no outfit,
+        no items, no mappable color family) — same contract as
+        `update_behaviour_weights`.
+    """
+    from sqlalchemy import select
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or not user.style_preferences:
+        return False
+
+    try:
+        style_dna = json.loads(user.style_preferences)
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+    from attreq_api.models.outfit import Outfit
+
+    outfit_result = await db.execute(select(Outfit).where(Outfit.id == outfit_id))
+    outfit = outfit_result.scalar_one_or_none()
+    if not outfit:
+        return False
+
+    from attreq_api.models.wardrobe import WardrobeItem as WI
+
+    item_ids = [i for i in [outfit.top_item_id, outfit.bottom_item_id] if i is not None]
+    if not item_ids:
+        return False
+
+    items_result = await db.execute(select(WI).where(WI.id.in_(item_ids)))
+    items = items_result.scalars().all()
+
+    affinity = style_dna.setdefault("color_affinity", {})
+    mutated = False
+    for item in items:
+        family = color_family_for_name(item.color_primary)
+        if not family:
+            continue
+        updated = bump_affinity(affinity, family, signal)
+        affinity.update(updated)
+        mutated = True
+
+    if not mutated:
+        return False
 
     await db.execute(
         update(User)

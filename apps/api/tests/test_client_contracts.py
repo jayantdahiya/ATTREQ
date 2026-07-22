@@ -266,6 +266,109 @@ async def test_daily_recommendations_accept_explicit_coordinates(monkeypatch, cl
 
 
 @pytest.mark.asyncio
+async def test_daily_recommendations_round_trips_color_harmony_branch(monkeypatch, client, dummy_db):
+    """RI-3: `color_harmony_branch` is additive on `OutfitScores` — a fake
+    candidate carrying it must round-trip through the response unchanged,
+    proving the field was wired into the schema (Pydantic v2's default
+    `extra='ignore'` already tolerates unknown keys; this proves the known one
+    actually surfaces)."""
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_weather(lat, lon):
+        return {
+            "temp": 29,
+            "feels_like": 31,
+            "condition": "Sunny",
+            "description": "clear sky",
+            "humidity": 60,
+            "wind_speed": 4.2,
+            "icon": "01d",
+        }
+
+    async def fake_cache_get(key):
+        return None
+
+    async def fake_cache_set(key, value, ttl):
+        return None
+
+    top_item = build_wardrobe_item(user_id=user.id)
+    bottom_item = build_wardrobe_item(user_id=user.id, category="jeans", color_primary="black")
+
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions):
+        return [
+            {
+                "top_item_id": str(top_item.id),
+                "top_item": {
+                    "id": str(top_item.id),
+                    "category": top_item.category,
+                    "color_primary": top_item.color_primary,
+                    "pattern": top_item.pattern,
+                    "image_url": top_item.processed_image_url,
+                    "thumbnail_url": top_item.thumbnail_url,
+                },
+                "bottom_item_id": str(bottom_item.id),
+                "bottom_item": {
+                    "id": str(bottom_item.id),
+                    "category": bottom_item.category,
+                    "color_primary": bottom_item.color_primary,
+                    "pattern": bottom_item.pattern,
+                    "image_url": bottom_item.processed_image_url,
+                    "thumbnail_url": bottom_item.thumbnail_url,
+                },
+                "accessory_item": None,
+                "scores": {
+                    "color_harmony": 0.85,
+                    "color_harmony_branch": "neutral_contrast",
+                    "formality": 0.6,
+                    "occasion_fit": 0.7,
+                    "weather_score": 0.8,
+                    "time_score": 0.6,
+                    "preference_bonus": 0.2,
+                    "style_dna": 0.0,
+                    "behaviour": 0.0,
+                    "total": 0.75,
+                },
+                "weather_context": {
+                    "temp": 29,
+                    "feels_like": 31,
+                    "condition": "Sunny",
+                    "description": "clear sky",
+                    "humidity": 60,
+                    "wind_speed": 4.2,
+                    "icon": "01d",
+                },
+                "occasion_context": "casual",
+            }
+        ]
+
+    monkeypatch.setattr(recommendations.weather_service, "get_current_weather", fake_get_weather)
+    monkeypatch.setattr(recommendations.redis_cache, "get", fake_cache_get)
+    monkeypatch.setattr(recommendations.redis_cache, "set", fake_cache_set)
+    monkeypatch.setattr(recommendations, "generate_daily_outfits", fake_generate_daily_outfits)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get(
+        "/api/v1/recommendations/daily",
+        params={"lat": 12.9716, "lon": 77.5946, "occasion": "casual"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"][0]["scores"]["color_harmony_branch"] == "neutral_contrast"
+    # Unknown extra keys (occasion_fit/weather_score/time_score) are silently
+    # ignored by OutfitScores (Pydantic v2 default extra='ignore') — not part
+    # of the response contract, consistent with the pre-existing
+    # style_dna/behaviour drop-silently precedent.
+    assert "occasion_fit" not in body["suggestions"][0]["scores"]
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_daily_recommendations_fallback_to_saved_coordinates(monkeypatch, client, dummy_db):
     user = build_user(saved_latitude=13.0827, saved_longitude=80.2707, saved_city="Chennai")
     weather_calls: list[tuple[float, float]] = []

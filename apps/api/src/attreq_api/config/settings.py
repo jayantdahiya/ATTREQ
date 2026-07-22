@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     style_dna_max_photos: int = Field(default=8, alias="STYLE_DNA_MAX_PHOTOS")
     style_dna_llm_concurrency: int = Field(default=3, alias="STYLE_DNA_LLM_CONCURRENCY")
 
+    # RI-3: personal-color selfie estimation — opt-in, feature-flagged. When
+    # disabled the endpoint 404s; when enabled it still requires explicit
+    # per-request consent (see `POST /users/style-dna/selfie`). Off by default
+    # because the face photo is transmitted to a third-party LLM vendor.
+    enable_personal_color_selfie: bool = Field(default=False, alias="ENABLE_PERSONAL_COLOR_SELFIE")
+
     # Wardrobe batch upload settings
     wardrobe_batch_upload_max_files: int = Field(
         default=20, alias="WARDROBE_BATCH_UPLOAD_MAX_FILES"

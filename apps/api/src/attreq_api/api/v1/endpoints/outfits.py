@@ -250,6 +250,13 @@ async def mark_outfit_worn(
     except Exception as e:
         logger.warning(f"Failed to update behaviour weights for worn outfit: {e}")
 
+    # RI-3: update the color-affinity vector from the same worn signal.
+    try:
+        from attreq_api.services.style_dna.style_dna_service import update_color_affinity
+        await update_color_affinity(db, current_user.id, outfit_id, signal="worn")
+    except Exception as e:
+        logger.warning(f"Failed to update color affinity for worn outfit: {e}")
+
     return OutfitResponse.model_validate(updated_outfit)
 
 
@@ -294,9 +301,9 @@ async def submit_outfit_feedback(
 
     # Update Style DNA behaviour weights based on feedback signal
     if feedback.feedback_score != 0:
+        signal = "liked" if feedback.feedback_score == 1 else "disliked"
         try:
             from attreq_api.services.style_dna.style_dna_service import update_behaviour_weights
-            signal = "liked" if feedback.feedback_score == 1 else "disliked"
             mutated = await update_behaviour_weights(db, current_user.id, outfit_id, signal=signal)
             if mutated:
                 await user_event_crud.create(
@@ -307,6 +314,13 @@ async def submit_outfit_feedback(
                 )
         except Exception as e:
             logger.warning(f"Failed to update behaviour weights for feedback: {e}")
+
+        # RI-3: update the color-affinity vector from the same like/dislike signal.
+        try:
+            from attreq_api.services.style_dna.style_dna_service import update_color_affinity
+            await update_color_affinity(db, current_user.id, outfit_id, signal=signal)
+        except Exception as e:
+            logger.warning(f"Failed to update color affinity for feedback: {e}")
 
     return OutfitResponse.model_validate(updated_outfit)
 

@@ -28,6 +28,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from _legacy_scorers import legacy_color_harmony_score  # noqa: E402
+
 from attreq_api.models.wardrobe import WardrobeItem  # noqa: E402
 from attreq_api.services.recommendation.algorithm import (  # noqa: E402
     calculate_color_harmony_score,
@@ -51,13 +53,31 @@ def _to_wardrobe_item(item: dict[str, Any]) -> WardrobeItem:
 def score_pair(top: dict[str, Any], bottom: dict[str, Any]) -> float:
     """Minimal, stable scoring surface over the existing algorithm functions.
 
-    RI-3/4/5 can swap in a different scorer by changing only this function's body —
-    the rest of the harness (generation, labeling sheet, AUC scoring) stays put.
+    RI-3: this now IS the "branched" arm — `calculate_color_harmony_score`
+    was rewired in `algorithm.py` to the CIELAB three-branch max
+    (`services/recommendation/color_harmony.py`), so this function picks it up
+    automatically with no code change here. See `score_pair_legacy` below for
+    the frozen pre-RI-3 arm, and `--compare legacy,branched` for a head-to-head.
     """
     top_item = _to_wardrobe_item(top)
     bottom_item = _to_wardrobe_item(bottom)
 
     color_score = calculate_color_harmony_score(top_item, bottom_item)
+    formality_score = calculate_formality_score([top_item, bottom_item])
+
+    return (color_score * 0.5) + (formality_score * 0.5)
+
+
+def score_pair_legacy(top: dict[str, Any], bottom: dict[str, Any]) -> float:
+    """RI-3 "legacy" arm — the frozen pre-RI-3 named-color-table scorer
+    (`scripts/_legacy_scorers.py`), blended with the (unchanged) formality
+    score the same way `score_pair` always has been, so the only variable
+    between the two arms is the color-harmony logic itself.
+    """
+    top_item = _to_wardrobe_item(top)
+    bottom_item = _to_wardrobe_item(bottom)
+
+    color_score = legacy_color_harmony_score(top.get("color_primary"), bottom.get("color_primary"))
     formality_score = calculate_formality_score([top_item, bottom_item])
 
     return (color_score * 0.5) + (formality_score * 0.5)
@@ -171,14 +191,57 @@ def score_against_scorer(labeled_df: pd.DataFrame) -> float:
     return roc_auc_score(labels, scores)
 
 
+def _auc_for(labeled_df: pd.DataFrame, scorer) -> float:
+    from sklearn.metrics import roc_auc_score
+
+    scores, labels = [], []
+    for _, row in labeled_df.iterrows():
+        top = json.loads(row["top_item_json"])
+        bottom = json.loads(row["bottom_item_json"])
+        scores.append(scorer(top, bottom))
+        labels.append(int(row["label"]))
+
+    if len(set(labels)) < 2:
+        raise ValueError(
+            "Labeled data must contain both classes (0 and 1) for AUC to be defined; "
+            f"got only: {set(labels)}"
+        )
+    return roc_auc_score(labels, scores)
+
+
+def compare_scorers(labeled_df: pd.DataFrame) -> dict[str, float]:
+    """RI-3 (C-Eval): report both arms' AUC. ADVISORY ONLY — the blocking gate
+    for RI-3 is the deterministic branch-selection unit tests
+    (`tests/test_color_harmony.py`), not this comparison. The labeled set here
+    is a ~120-pair hand-authored fixture (`tests/fixtures/eval/outfit_labels.csv`,
+    RI-1), not the >=100 independently-human-labeled set the milestone doc
+    originally envisioned — a real blocking AUC gate is deferred to RI-1's
+    follow-up work. This function never raises/exits nonzero on a regression,
+    only prints a warning (see `main()`).
+    """
+    return {
+        "legacy": _auc_for(labeled_df, score_pair_legacy),
+        "branched": _auc_for(labeled_df, score_pair),
+    }
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="RI-1 outfit-quality eval harness")
+    parser = argparse.ArgumentParser(description="RI-1/RI-3 outfit-quality eval harness")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--generate", action="store_true", help="Generate a fresh unlabeled pairs CSV for labeling"
     )
     group.add_argument(
         "--score", metavar="LABELED_CSV", help="Score the current scorer's AUC against a labeled CSV"
+    )
+    group.add_argument(
+        "--compare",
+        metavar="ARMS",
+        help=(
+            "RI-3: compare scorer arms against tests/fixtures/eval/outfit_labels.csv, "
+            "e.g. --compare legacy,branched (order is cosmetic — both are always computed). "
+            "Advisory only: prints a regression warning but never exits nonzero."
+        ),
     )
     parser.add_argument("--n", type=int, default=100, help="Number of pairs to generate (--generate only)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -194,6 +257,18 @@ def main() -> None:
         wardrobe = generate_synthetic_wardrobe(seed=args.seed)
         pairs = generate_pairs(wardrobe, n=args.n, seed=args.seed)
         render_labeling_sheet(pairs, args.out)
+        return
+
+    if args.compare:
+        labeled_df = ingest_labels(DEFAULT_LABELS_CSV)
+        aucs = compare_scorers(labeled_df)
+        print(f"Legacy (pre-RI-3 name-pair table)  AUC: {aucs['legacy']:.4f}")
+        print(f"Branched (RI-3 CIELAB three-branch) AUC: {aucs['branched']:.4f}")
+        if aucs["branched"] < aucs["legacy"]:
+            print(
+                "WARNING: branched AUC is lower than legacy on this hand-authored fixture "
+                "(advisory only, not a blocking gate — see compare_scorers() docstring)."
+            )
         return
 
     labeled_df = ingest_labels(Path(args.score))

@@ -3,7 +3,7 @@
 import json
 import logging
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -14,7 +14,16 @@ from attreq_api.models.outfit import Outfit
 from attreq_api.models.user import User
 from attreq_api.models.wardrobe import WardrobeItem
 from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.recommendation.color_utils import COOL_COLORS, NEUTRAL_COLORS, WARM_COLORS
+from attreq_api.services.recommendation.color_harmony import (
+    HarmonyResult,
+    PaletteColor,
+    harmony,
+    is_functional_neutral,
+)
+from attreq_api.services.recommendation.context_scoring import calculate_context_score
+from attreq_api.services.recommendation.legacy_color_lab import legacy_palette_for_item
+from attreq_api.services.style_dna.color_families import color_family_for_name
+from attreq_api.services.style_dna.personal_color import apply_personal_color_adjustment
 from attreq_api.services.style_dna.scoring import (
     calculate_behaviour_score,
     calculate_style_dna_score,
@@ -175,63 +184,70 @@ async def get_recently_worn_items(db: AsyncSession, user_id: UUID, days: int = 1
 # ============================================================================
 
 
-def calculate_color_harmony_score(item1: WardrobeItem, item2: WardrobeItem) -> float:
-    """Calculate color compatibility score between two items.
-
-    Scoring rules:
-    - Complementary colors: 0.9
-    - Analogous colors: 0.8
-    - Neutral + any: 0.7
-    - Same color family: 0.6
-    - Clashing: 0.3
-
-    Args:
-        item1: First wardrobe item
-        item2: Second wardrobe item
-
-    Returns:
-        Compatibility score between 0 and 1
+def _load_palette(item: WardrobeItem) -> list[PaletteColor]:
+    """RI-3: real RI-2 pixel palette when present, else the legacy named-color
+    bridge. `getattr(..., None) or 1` guards transient (never-flushed)
+    instances — e.g. `scripts/eval_outfits.py`'s synthetic `WardrobeItem`s —
+    where the column's client-side `default=1` hasn't been applied yet, so
+    plain attribute access reads `None`, not `1`.
     """
-    # Define color relationships (shared with services/stats via color_utils)
-    neutrals = NEUTRAL_COLORS
-    warm_colors = WARM_COLORS
-    cool_colors = COOL_COLORS
+    schema_version = getattr(item, "schema_version", None) or 1
+    color_palette = getattr(item, "color_palette", None)
 
-    # Complementary pairs
-    complementary = {
-        ("red", "green"),
-        ("blue", "orange"),
-        ("yellow", "purple"),
-        ("pink", "green"),
-    }
+    if schema_version == 2 and color_palette:
+        colors: list[PaletteColor] = []
+        for entry in color_palette:
+            lab = tuple(float(v) for v in entry["lab"])
+            raw_is_neutral = bool(entry.get("is_neutral", False))
+            colors.append(
+                PaletteColor(
+                    lab=lab,
+                    is_neutral=raw_is_neutral or is_functional_neutral(lab),
+                    share=float(entry.get("share", 1.0)),
+                )
+            )
+        return colors
 
-    color1 = (item1.color_primary or "").lower()
-    color2 = (item2.color_primary or "").lower()
+    return legacy_palette_for_item(item)
 
-    # Handle missing colors
-    if not color1 or not color2:
-        return 0.5  # Neutral score for unknown colors
 
-    # Same color
-    if color1 == color2:
-        return 0.6
+def calculate_color_harmony_detailed(item1: WardrobeItem, item2: WardrobeItem) -> HarmonyResult:
+    """RI-3 color harmony: `max(tonal, neutral_contrast, hue_rule)` over every
+    `(c1, c2)` palette-color pair, keeping the single highest-scoring pair
+    (not a weighted mean, so a strong secondary-color match on a patterned
+    item isn't diluted by an unrelated dominant-color pairing).
 
-    # Neutral + any color
-    if color1 in neutrals or color2 in neutrals:
-        return 0.7
+    Empty palette on either side (schema_version==1 item with neither
+    `color_primary` nor `color_secondary` set) returns the old "unknown color"
+    0.5 fallback, branch `"neutral_contrast"` (matches the pre-RI-3 default).
+    """
+    palette1 = _load_palette(item1)
+    palette2 = _load_palette(item2)
 
-    # Complementary colors
-    if (color1, color2) in complementary or (color2, color1) in complementary:
-        return 0.9
+    if not palette1 or not palette2:
+        return HarmonyResult(0.5, "neutral_contrast", {"reason": "empty_palette"})
 
-    # Same color family (warm or cool)
-    if (color1 in warm_colors and color2 in warm_colors) or (
-        color1 in cool_colors and color2 in cool_colors
-    ):
-        return 0.8
+    best: HarmonyResult | None = None
+    for c1 in palette1:
+        for c2 in palette2:
+            result = harmony(c1, c2)
+            if best is None or result.score > best.score:
+                best = result
 
-    # Different color families (potential clash)
-    return 0.3
+    assert best is not None  # both palettes non-empty => at least one pair scored
+    return best
+
+
+def calculate_color_harmony_score(item1: WardrobeItem, item2: WardrobeItem) -> float:
+    """Calculate color compatibility score between two items (0-1).
+
+    RI-3: delegates to `calculate_color_harmony_detailed().score` — real
+    CIELAB palettes (RI-2, `schema_version == 2`) or the legacy named-color
+    Lab bridge otherwise. Name+signature preserved for existing importers
+    (`services/stats/wardrobe_stats.py::score_pair`,
+    `scripts/eval_outfits.py`, `services/recommendation/__init__.py`).
+    """
+    return calculate_color_harmony_detailed(item1, item2).score
 
 
 # ============================================================================
@@ -505,6 +521,7 @@ async def generate_daily_outfits(
     weather: dict[str, Any],
     occasion: str = "casual",
     num_suggestions: int = 3,
+    now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Generate daily outfit suggestions using all recommendation functions.
 
@@ -517,7 +534,7 @@ async def generate_daily_outfits(
     6. For each suggestion:
        a. Select base item (bottom)
        b. Find compatible tops using Weaviate
-       c. Score combinations (color + formality + preferences)
+       c. Score combinations (color harmony + context + preferences)
        d. Select accessories if available
     7. Return top 3 unique combinations
 
@@ -527,6 +544,10 @@ async def generate_daily_outfits(
         weather: Weather data dict
         occasion: Occasion type (default: "casual")
         num_suggestions: Number of suggestions to generate (default: 3)
+        now: RI-3 testability hook for `context_scoring.calculate_time_score`
+            (defaults to `datetime.now()` inside `calculate_context_score`
+            when omitted). Not threaded to the endpoint — production calls
+            always use the real current time.
 
     Returns:
         List of outfit suggestions with scores and metadata
@@ -618,8 +639,30 @@ async def generate_daily_outfits(
                 continue
 
             # Calculate scores
-            color_score = calculate_color_harmony_score(top, bottom)
-            formality_score = calculate_formality_score([top, bottom])
+            harmony_result = calculate_color_harmony_detailed(top, bottom)
+            color_score = harmony_result.score
+
+            # RI-3: personal-color + color-affinity adjustment, top slot only
+            # (bottoms excluded per the finalized plan), jointly clamped to a
+            # single ±10% envelope (C6) rather than two independent ±10%
+            # adjustments that would compound to ~21%. Safe to call
+            # unconditionally — returns `color_score` unchanged when
+            # `style_dna` is None/empty or confidence is low.
+            top_palette = _load_palette(top)
+            top_dominant_lab = top_palette[0].lab if top_palette else None
+            top_color_family = color_family_for_name(top.color_primary)
+            color_score = apply_personal_color_adjustment(
+                color_score, top_dominant_lab, top_color_family, style_dna
+            )
+
+            # RI-3: context_score occupies the old formality-slot's role in the
+            # weighted sum below (0.55 occasion / 0.35 weather / 0.10 time) —
+            # it is NOT blended alongside a separate formality term, which
+            # would double-count formality (occasion_fit already folds in
+            # formality consistency between the two items).
+            context_score, context_detail = calculate_context_score(
+                [top, bottom], occasion, weather, now=now
+            )
 
             # Preference bonus
             preference_bonus = 0.0
@@ -645,12 +688,12 @@ async def generate_daily_outfits(
                 )
                 total_score = (
                     color_score * 0.20
-                    + formality_score * 0.20
+                    + context_score * 0.20
                     + style_dna_score * 0.40
                     + behaviour_score * 0.20
                 )
             else:
-                total_score = (color_score * 0.4) + (formality_score * 0.4) + (preference_bonus * 0.2)
+                total_score = (color_score * 0.4) + (context_score * 0.4) + (preference_bonus * 0.2)
 
             # Select an accessory if available
             accessory = None
@@ -694,7 +737,16 @@ async def generate_daily_outfits(
                     ),
                     "scores": {
                         "color_harmony": round(color_score, 2),
-                        "formality": round(formality_score, 2),
+                        "color_harmony_branch": harmony_result.branch,
+                        # RI-3: this key still means "the formality-ish context
+                        # slot" — its value is now `context_score`
+                        # (0.55*occasion_fit + 0.35*weather_score + 0.10*time_score),
+                        # not the raw formality-variance score. See
+                        # `context_scoring.py` module docstring.
+                        "formality": round(context_score, 2),
+                        "occasion_fit": round(context_detail["occasion_fit"], 2),
+                        "weather_score": round(context_detail["weather_score"], 2),
+                        "time_score": round(context_detail["time_score"], 2),
                         "preference_bonus": round(preference_bonus, 2),
                         "style_dna": round(style_dna_score, 2),
                         "behaviour": round(behaviour_score, 2),

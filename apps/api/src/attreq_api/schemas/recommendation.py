@@ -38,7 +38,21 @@ class OutfitScores(BaseModel):
     """Scoring breakdown for an outfit suggestion."""
 
     color_harmony: float = Field(..., description="Color compatibility score (0-1)")
-    formality: float = Field(..., description="Formality matching score (0-1)")
+    color_harmony_branch: str | None = Field(
+        None,
+        description=(
+            "RI-3: winning color-harmony branch — 'tonal' | 'neutral_contrast' | "
+            "'hue_rule' | 'none'. Consumed by RI-4 explanations."
+        ),
+    )
+    formality: float = Field(
+        ...,
+        description=(
+            "RI-3: context score (0.55*occasion_fit + 0.35*weather_score + "
+            "0.10*time_score) occupying the original formality slot — see "
+            "services/recommendation/context_scoring.py"
+        ),
+    )
     preference_bonus: float = Field(..., description="User preference bonus (0-1)")
     style_dna: float | None = Field(None, description="Style DNA affinity score (0-1)")
     behaviour: float | None = Field(None, description="Learned behaviour-weight score (0-1)")
