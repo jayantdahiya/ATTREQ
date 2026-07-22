@@ -1,8 +1,10 @@
 """Anthropic Claude API service for wardrobe classification."""
 
+import asyncio
 import base64
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +45,7 @@ class ClaudeClassifierService:
             ValueError: If API key not configured or response invalid
             anthropic.APIError: If API request fails
         """
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Claude API key not configured")
@@ -85,7 +87,7 @@ class ClaudeClassifierService:
 
     async def analyze_image(self, image_path: str, prompt: str) -> dict[str, Any]:
         """Call Claude vision with a custom prompt. Returns raw JSON dict."""
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Claude API key not configured")

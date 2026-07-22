@@ -47,7 +47,6 @@ def calculate_style_dna_score(outfit_items: list, style_dna: dict[str, Any]) -> 
     scores.append((color_score, 0.30))
 
     # Silhouette match
-    silhouette_pref = style_dna.get("silhouette", {}).get("preference", "")
     silhouette_confidence = style_dna.get("silhouette", {}).get("confidence", 0.5)
     # Silhouette is hard to check from wardrobe item attributes alone — use confidence as proxy
     silhouette_score = 0.5 + (silhouette_confidence - 0.5) * 0.4
@@ -75,7 +74,6 @@ def calculate_style_dna_score(outfit_items: list, style_dna: dict[str, Any]) -> 
     target_formality = formality_bias.get("level", 1.5)
     formality_confidence = formality_bias.get("confidence", 0.5)
 
-    formality_map = {"athletic": 0, "casual": 1, "business": 2, "formal": 3}
     item_formalities = []
     for item in outfit_items:
         item_occasions = getattr(item, "occasion", None) or []

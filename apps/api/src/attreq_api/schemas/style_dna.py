@@ -4,7 +4,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
+
+from attreq_api.services.storage import resolve_image_url
 
 
 class StyleDnaPhotoResponse(BaseModel):
@@ -16,6 +18,10 @@ class StyleDnaPhotoResponse(BaseModel):
     quality_reason: str | None = None
     per_photo_extraction: dict[str, Any] | None = None
     created_at: datetime
+
+    @field_serializer("file_url")
+    def _resolve_image_urls(self, value: str) -> str:
+        return resolve_image_url(value)
 
     class Config:
         from_attributes = True

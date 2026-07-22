@@ -14,7 +14,10 @@ from attreq_api.models.outfit import Outfit
 from attreq_api.models.user import User
 from attreq_api.models.wardrobe import WardrobeItem
 from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.style_dna.scoring import calculate_behaviour_score, calculate_style_dna_score
+from attreq_api.services.style_dna.scoring import (
+    calculate_behaviour_score,
+    calculate_style_dna_score,
+)
 
 logger = logging.getLogger(__name__)
 

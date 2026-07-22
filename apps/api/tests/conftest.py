@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncGenerator
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 from httpx import ASGITransport, AsyncClient
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://attreq_user:attreq_password@localhost:5432/attreq_db")
@@ -39,7 +42,7 @@ class DummyDB:
 
 
 def build_user(**overrides) -> User:
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     defaults = {
         "id": uuid.uuid4(),
         "email": "test@example.com",
@@ -57,13 +60,15 @@ def build_user(**overrides) -> User:
         "oauth_provider": None,
         "oauth_id": None,
         "style_preferences": None,
+        "onboarding_completed": False,
+        "onboarding_step": "pending",
     }
     defaults.update(overrides)
     return User(**defaults)
 
 
 def build_wardrobe_item(*, user_id: uuid.UUID, **overrides) -> WardrobeItem:
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     defaults = {
         "id": uuid.uuid4(),
         "user_id": user_id,
@@ -88,7 +93,7 @@ def build_wardrobe_item(*, user_id: uuid.UUID, **overrides) -> WardrobeItem:
 
 
 def build_outfit(*, user_id: uuid.UUID, top_item_id: uuid.UUID | None = None, bottom_item_id: uuid.UUID | None = None, **overrides) -> Outfit:
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     defaults = {
         "id": uuid.uuid4(),
         "user_id": user_id,

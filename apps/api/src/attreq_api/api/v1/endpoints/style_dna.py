@@ -87,8 +87,8 @@ async def update_style_dna(
 
     try:
         style_dna = json.loads(current_user.style_preferences)
-    except (json.JSONDecodeError, TypeError):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Corrupt Style DNA data")
+    except (json.JSONDecodeError, TypeError) as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Corrupt Style DNA data") from e
 
     # Deep merge corrections into existing style_dna
     _deep_merge(style_dna, correction.corrections)
@@ -151,7 +151,7 @@ async def regenerate_style_dna(
         style_dna = await classifier.analyze_text(synthesis_prompt)
     except Exception as e:
         logger.error(f"Style DNA regeneration failed: {e}")
-        raise HTTPException(status_code=500, detail="Style DNA synthesis failed")
+        raise HTTPException(status_code=500, detail="Style DNA synthesis failed") from e
 
     await db.execute(
         update(User)

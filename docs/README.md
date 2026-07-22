@@ -94,6 +94,7 @@ Use this for decision support and experiments.
 
 - `mobile-frontend/`: React Native stack research and component-library evaluation
 - `llm-detection/`: wardrobe image classification experiments and supporting artifacts
+- `wardrobe-ai-knowledge-base.md`: ~75-source deep-research digest (outfit compatibility, tagging, color science, personalization, industry playbooks, competitors) — the evidence base for `07-recommendation-intelligence/`
 
 ### `05-roadmap/`
 
@@ -106,6 +107,19 @@ Use this for the active roadmap to beta launch (created 2026-06-10). Each milest
 - `04-milestone-4-testing-reliability.md`: test suites, backups, monitoring
 - `05-milestone-5-distribution-beta.md`: EAS, TestFlight/Play, mobile Sentry (TKT-009)
 
+### `07-recommendation-intelligence/`
+
+Use this for the recommendation-quality phase that follows beta launch (created 2026-07-22). Research-derived: every task cites its evidence from `04-research/wardrobe-ai-knowledge-base.md`. Each milestone file is self-contained and executable single-shot by an LLM or developer.
+
+- `00-roadmap-overview.md`: milestone list, dependency graph, sequencing rationale, "what NOT to build"
+- `01-milestone-1-telemetry-eval-harness.md`: preference-pair logging, event stream, tagging benchmark, outfit eval set
+- `02-milestone-2-classifier-schema-v2.md`: expanded fixed-enum tag schema + deterministic CIELAB pixel color
+- `03-milestone-3-color-context-scoring.md`: CIELAB color harmony, personal-color prior, context weighting
+- `04-milestone-4-composition-explanations.md`: seeded greedy generation, anti-repetition, grey inventory, calibrated explanations
+- `05-milestone-5-adaptive-personalization.md`: Bayesian quiz blend, fitted scoring weights, swipe deck, vibe prompt
+- `06-milestone-6-embeddings-reranker.md`: FashionCLIP embeddings in Weaviate, feedback propagation, optional LLM re-ranker
+- `07-milestone-7-retention-trust.md`: wardrobe stats, multi-photo items, archive semantics, batch-capture onboarding
+
 ### `99-archive/`
 
 Use this for non-authoritative historical docs.
@@ -116,7 +130,8 @@ Use this for non-authoritative historical docs.
 
 - Current project status: `00-current-status/00-current-status.md`
 - Done vs pending work: `00-current-status/01-task-tracker.md`
-- What should be built next: `05-roadmap/00-roadmap-overview.md` (active launch roadmap), then `00-current-status/02-next-phase-tickets.md`
+- What should be built next: `05-roadmap/00-roadmap-overview.md` (active launch roadmap), then `07-recommendation-intelligence/00-roadmap-overview.md` (next phase), then `00-current-status/02-next-phase-tickets.md`
+- Recommendation/AI research evidence: `04-research/wardrobe-ai-knowledge-base.md`
 - Mobile implementation design: `02-implementation/plan/06-frontend.md`
 - Auth/session behavior: `02-implementation/plan/07-authentication.md`
 - Mobile test strategy: `02-implementation/plan/08-testing.md`

@@ -1,34 +1,24 @@
-'use client';
-
 import Link from 'next/link';
-import { motion, useReducedMotion } from 'framer-motion';
 import { appLoginUrl } from '@/lib/urls';
 import { SectionWrapper } from './SectionWrapper';
 
 export function FinalCTA() {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <SectionWrapper className="landing-section landing-cta-section landing-section--center">
-      <div className="landing-gradient-blob landing-gradient-blob--teal landing-gradient-blob--cta-teal" aria-hidden="true" />
-      <div className="landing-gradient-blob landing-gradient-blob--gold landing-gradient-blob--cta-gold" aria-hidden="true" />
-
-      <div className="landing-cta-section__content">
-        <h2 className="landing-title">Ready to rethink your mornings?</h2>
-
-        <motion.div
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.6 }}
-          transition={reduceMotion ? { duration: 0 } : { duration: 0.7, delay: 0.1 }}
-        >
-          <Link href={appLoginUrl} className="landing-cta landing-cta--large" aria-label="Try ATTREQ for free">
-            Try ATTREQ - It is Free
-          </Link>
-        </motion.div>
-
-        <p className="landing-cta-section__note">No credit card required. Your wardrobe stays private.</p>
-      </div>
-    </SectionWrapper>
+    <div className="landing-coda">
+      <SectionWrapper className="landing-coda__inner">
+        <p className="landing-coda__ml">After dark</p>
+        <h2 className="landing-coda__title">
+          Tomorrow&rsquo;s look is <em>already decided.</em>
+        </h2>
+        <p className="landing-coda__body">
+          Photograph your closet tonight and wake up to your first three looks.
+          Light mode, dark mode — ATTREQ dresses well in both.
+        </p>
+        <Link href={appLoginUrl} className="landing-coda__cta">
+          Get started
+        </Link>
+        <p className="landing-coda__note">Free while in beta — your photos stay private</p>
+      </SectionWrapper>
+    </div>
   );
 }

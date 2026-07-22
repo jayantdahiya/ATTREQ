@@ -1,8 +1,10 @@
 """Gemini API service for wardrobe classification with batch processing support."""
 
+import asyncio
 import base64
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +47,7 @@ class GeminiClassifierService:
             ValueError: If API key not configured or response invalid
             httpx.HTTPError: If API request fails
         """
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Gemini API key not configured")
@@ -86,7 +88,7 @@ class GeminiClassifierService:
             raise ValueError(f"Too many images. Maximum batch size is {self.batch_size}")
 
         for path in image_paths:
-            if not Path(path).exists():
+            if not await asyncio.to_thread(os.path.exists, path):
                 raise FileNotFoundError(f"Image not found: {path}")
 
         try:
@@ -110,7 +112,7 @@ class GeminiClassifierService:
 
     async def analyze_image(self, image_path: str, prompt: str) -> dict[str, Any]:
         """Call Gemini vision with a custom prompt. Returns raw JSON dict."""
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Gemini API key not configured")

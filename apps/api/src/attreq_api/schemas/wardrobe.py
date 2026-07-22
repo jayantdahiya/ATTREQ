@@ -3,7 +3,9 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from attreq_api.services.storage import resolve_image_url
 
 
 class WardrobeItemBase(BaseModel):
@@ -54,6 +56,10 @@ class WardrobeItemResponse(WardrobeItemBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_serializer("original_image_url", "processed_image_url", "thumbnail_url")
+    def _resolve_image_urls(self, value: str | None) -> str | None:
+        return resolve_image_url(value)
+
     class Config:
         from_attributes = True
 
@@ -75,3 +81,7 @@ class WardrobeItemUploadResponse(BaseModel):
     status: str
     message: str
     original_image_url: str
+
+    @field_serializer("original_image_url")
+    def _resolve_image_urls(self, value: str) -> str:
+        return resolve_image_url(value)

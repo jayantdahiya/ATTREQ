@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-import uuid
 from datetime import date
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    import uuid
 from fastapi import HTTPException
 
 from attreq_api.api.v1 import deps
@@ -334,7 +337,7 @@ async def test_mark_outfit_worn_updates_outfit_and_items(monkeypatch, client, du
 
     async def fake_update_item(db, item_id, data):
         update_calls.append((item_id, data))
-        return None
+        return
 
     monkeypatch.setattr(outfits.outfit_crud, "get_by_id", fake_get_outfit)
     monkeypatch.setattr(outfits.outfit_crud, "mark_as_worn", fake_mark_as_worn)

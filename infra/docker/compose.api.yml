@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - attreq_network
     healthcheck:
@@ -29,7 +29,7 @@ services:
     container_name: attreq_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - attreq_network
     healthcheck:
@@ -132,7 +132,7 @@ services:
       MAX_UPLOAD_SIZE_MB: 10
       UPLOAD_DIR: /app/uploads
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ../../apps/api:/app
       - ../../apps/api/uploads:/app/uploads

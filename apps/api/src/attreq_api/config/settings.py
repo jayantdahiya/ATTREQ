@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
     upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
 
+    # Object storage settings ("local" disk or "s3"-compatible, e.g. Cloudflare R2)
+    storage_backend: str = Field(default="local", alias="STORAGE_BACKEND")
+    s3_endpoint_url: str | None = Field(default=None, alias="S3_ENDPOINT_URL")
+    s3_bucket: str | None = Field(default=None, alias="S3_BUCKET")
+    s3_access_key_id: str | None = Field(default=None, alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str | None = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
+
     # Style DNA settings
     style_dna_min_photos: int = Field(default=3, alias="STYLE_DNA_MIN_PHOTOS")
     style_dna_max_photos: int = Field(default=8, alias="STYLE_DNA_MAX_PHOTOS")

@@ -2,7 +2,9 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from attreq_api.services.storage import resolve_image_url
 
 
 class WeatherData(BaseModel):
@@ -26,6 +28,10 @@ class OutfitItemDetail(BaseModel):
     pattern: str | None = Field(None, description="Pattern type")
     image_url: str | None = Field(None, description="Full image URL")
     thumbnail_url: str | None = Field(None, description="Thumbnail URL")
+
+    @field_serializer("image_url", "thumbnail_url")
+    def _resolve_image_urls(self, value: str | None) -> str | None:
+        return resolve_image_url(value)
 
 
 class OutfitScores(BaseModel):

@@ -27,7 +27,7 @@ from attreq_api.schemas.wardrobe import (
     WardrobeItemUploadResponse,
 )
 from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.storage.file_handler import file_storage
+from attreq_api.services.storage import get_storage
 from attreq_api.workers.batch_image_processor import process_batch_wardrobe_images
 from attreq_api.workers.image_processor import process_wardrobe_image
 
@@ -81,7 +81,7 @@ async def upload_wardrobe_item(
 
     try:
         # Save uploaded file
-        file_path, file_url = await file_storage.save_upload_file(
+        file_ref, file_url = await get_storage().save_upload_file(
             file, current_user.id, "originals"
         )
 
@@ -95,7 +95,8 @@ async def upload_wardrobe_item(
             process_wardrobe_image,
             item_id=item.id,
             user_id=current_user.id,
-            original_image_path=file_path,
+            original_image_ref=file_ref,
+            original_image_url=file_url,
         )
 
         logger.info(f"Wardrobe item {item.id} uploaded by user {current_user.id}")
@@ -188,11 +189,13 @@ async def batch_upload_wardrobe_items(
     try:
         # Save all uploaded files and create database records
         saved_items = []
-        image_paths = []
+        image_refs = []
+        image_urls = []
+        storage = get_storage()
 
         for file in validated_files:
             # Save uploaded file
-            file_path, file_url = await file_storage.save_upload_file(
+            file_ref, file_url = await storage.save_upload_file(
                 file, current_user.id, "originals"
             )
 
@@ -202,14 +205,16 @@ async def batch_upload_wardrobe_items(
             )
 
             saved_items.append(item)
-            image_paths.append(file_path)
+            image_refs.append(file_ref)
+            image_urls.append(file_url)
 
         # Queue batch background processing
         background_tasks.add_task(
             process_batch_wardrobe_images,
             item_ids=[item.id for item in saved_items],
             user_id=current_user.id,
-            image_paths=image_paths,
+            image_refs=image_refs,
+            image_urls=image_urls,
         )
 
         logger.info(
