@@ -11,6 +11,7 @@ from attreq_api.config.database import get_db
 from attreq_api.integrations.external.weather_api import weather_service
 from attreq_api.models.user import User
 from attreq_api.schemas.recommendation import DailySuggestionsResponse
+from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
 from attreq_api.services.cache.redis_client import redis_cache
 from attreq_api.services.recommendation.algorithm import generate_daily_outfits
 
@@ -149,16 +150,7 @@ async def clear_suggestion_cache(
     Args:
         current_user: Currently authenticated user
     """
-    today = date.today().isoformat()
-
-    # Clear cache for all occasions
-    occasions = ["casual", "formal", "party", "business", "athletic"]
-    cleared_count = 0
-
-    for occasion in occasions:
-        cache_key = f"daily_suggestions:{current_user.id}:{today}:{occasion}"
-        if await redis_cache.delete(cache_key):
-            cleared_count += 1
+    cleared_count = await invalidate_daily_suggestions(current_user.id)
 
     logger.info(f"Cleared {cleared_count} cached suggestions for user {current_user.id}")
 

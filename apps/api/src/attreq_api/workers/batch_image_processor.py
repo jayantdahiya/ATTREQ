@@ -2,27 +2,36 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from attreq_api.config.database import AsyncSessionLocal
-from attreq_api.crud.wardrobe import wardrobe_crud
-from attreq_api.services.ai.background_removal import background_removal_service
-from attreq_api.services.ai.clothing_detection import clothing_detection_service
-from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.storage.file_handler import file_storage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from attreq_api.config.database import AsyncSessionLocal
+from attreq_api.config.settings import settings
+from attreq_api.crud.wardrobe import wardrobe_crud
+from attreq_api.services.ai.background_removal import generate_processed_and_thumbnail
+from attreq_api.services.ai.clothing_detection import clothing_detection_service
+from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
-BATCH_SIZE = 5
+logger = logging.getLogger(__name__)
 
 
 async def process_batch_wardrobe_images(
     item_ids: list[UUID], user_id: UUID, image_paths: list[str]
 ) -> None:
-    """Process multiple wardrobe images sequentially using Groq API.
+    """Process multiple wardrobe images concurrently (bounded) using Groq API.
+
+    Each item gets its OWN `AsyncSession` opened inside the bounded task —
+    SQLAlchemy async sessions forbid concurrent interleaved awaits on a single
+    shared session, so a session shared across `asyncio.gather` tasks would
+    corrupt state. This was the real bug in the previous sequential-with-one-
+    shared-session implementation (see RI-7 plan, "Shared-AsyncSession
+    concurrency bug").
+
+    One bad image never fails the whole batch — failures are caught per-item
+    and the item is marked "failed" independently.
 
     Args:
         item_ids: List of wardrobe item IDs to process
@@ -34,34 +43,42 @@ async def process_batch_wardrobe_images(
 
     logger.info(f"Processing batch of {len(image_paths)} wardrobe images for user {user_id}")
 
-    async with AsyncSessionLocal() as db:
-        processed_count = 0
+    semaphore = asyncio.Semaphore(settings.wardrobe_batch_processing_concurrency)
 
-        for i in range(0, len(image_paths), BATCH_SIZE):
-            batch_item_ids = item_ids[i : i + BATCH_SIZE]
-            batch_image_paths = image_paths[i : i + BATCH_SIZE]
-
-            logger.info(f"Processing batch {i // BATCH_SIZE + 1}: {len(batch_image_paths)} images")
-
-            for item_id, image_path in zip(batch_item_ids, batch_image_paths, strict=False):
+    async def _bounded(item_id: UUID, image_path: str) -> None:
+        async with semaphore, AsyncSessionLocal() as db:  # one session per item — REQUIRED
+            try:
+                await _process_single_item(
+                    item_id=item_id,
+                    image_path=image_path,
+                    user_id=user_id,
+                    db=db,
+                )
+                logger.info(f"Successfully processed item {item_id}")
+            except Exception as e:
+                logger.error(f"Failed to process item {item_id}: {str(e)}")
                 try:
-                    await _process_single_item(
-                        item_id=item_id,
-                        image_path=image_path,
-                        user_id=user_id,
-                        db=db,
-                    )
-                    logger.info(f"Successfully processed item {item_id}")
-                    processed_count += 1
-                except Exception as e:
-                    logger.error(f"Failed to process item {item_id}: {str(e)}")
                     await wardrobe_crud.update(
                         db=db, item_id=item_id, update_data={"processing_status": "failed"}
                     )
+                except Exception as update_error:
+                    logger.error(
+                        f"Failed to mark item {item_id} as failed: {str(update_error)}"
+                    )
 
-        logger.info(
-            f"Completed batch processing: {processed_count}/{len(image_paths)} images processed"
+    await asyncio.gather(
+        *(
+            _bounded(item_id, image_path)
+            for item_id, image_path in zip(item_ids, image_paths, strict=True)
         )
+    )
+
+    try:
+        await invalidate_wardrobe_stats_cache(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate stats cache for user {user_id}: {str(e)}")
+
+    logger.info(f"Completed batch processing of {len(image_paths)} images for user {user_id}")
 
 
 async def _process_single_item(
@@ -76,41 +93,17 @@ async def _process_single_item(
         item_id: Wardrobe item ID
         image_path: Path to the original image
         user_id: User ID who owns the item
-        db: Database session
+        db: Database session (must be exclusive to this task — see caller)
     """
     try:
-        # Background removal
-        processed_image_path = image_path
-        processed_image_url = file_storage.get_file_url(image_path)
-        try:
-            original_path = Path(image_path)
-            processed_filename = original_path.name.replace(
-                original_path.suffix, f"_processed{original_path.suffix}"
+        # Background removal + thumbnail generation (shared helper). Falls
+        # back to the original path/URL internally if bg removal fails, so
+        # `processed_image_path` is always a valid file to classify against.
+        processed_image_path, processed_image_url, thumbnail_url = (
+            await generate_processed_and_thumbnail(
+                image_path, user_id, log_ref=f"item {item_id}"
             )
-            processed_image_path = str(file_storage.processed_dir / processed_filename)
-            await asyncio.to_thread(
-                background_removal_service.remove_background,
-                image_path,
-                processed_image_path,
-            )
-            processed_image_url = file_storage.get_file_url(processed_image_path)
-            logger.info(f"Background removal completed for item {item_id}")
-        except Exception as e:
-            logger.warning(f"Background removal failed for item {item_id}: {str(e)}")
-            processed_image_path = image_path
-
-        # Thumbnail generation
-        thumbnail_url = None
-        try:
-            _, thumbnail_url = await asyncio.to_thread(
-                file_storage.generate_thumbnail,
-                processed_image_path,
-                str(user_id),
-                300,
-            )
-            logger.info(f"Thumbnail generation completed for item {item_id}")
-        except Exception as e:
-            logger.warning(f"Thumbnail generation failed for item {item_id}: {str(e)}")
+        )
 
         # Classify via Groq (or fallback)
         classification_result: dict[str, Any] = {

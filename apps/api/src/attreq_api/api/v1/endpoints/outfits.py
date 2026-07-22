@@ -19,6 +19,7 @@ from attreq_api.schemas.outfit import (
     OutfitResponse,
     OutfitWear,
 )
+from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -217,6 +218,11 @@ async def mark_outfit_worn(
                 )
 
     logger.info(f"Outfit {outfit_id} marked as worn by user {current_user.id}")
+
+    try:
+        await invalidate_wardrobe_stats_cache(current_user.id)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate stats cache for user {current_user.id}: {e}")
 
     # Update Style DNA behaviour weights based on worn signal
     try:
