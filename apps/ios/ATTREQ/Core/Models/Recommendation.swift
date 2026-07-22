@@ -39,6 +39,10 @@ struct OutfitSuggestion: Codable, Sendable, Equatable {
     let scores: OutfitScores
     let weatherContext: WeatherData
     let occasionContext: String
+    /// 0-based position within the shown batch (RI-1). Stamped by the backend
+    /// endpoint at generation time — the value `RecommendationsRepository
+    /// .submitFeedback` must send back for this suggestion to be addressable.
+    let outfitIndex: Int
 }
 
 /// Mirrors backend `DailySuggestionsResponse` / TS `DailySuggestionsResponse`.
@@ -48,6 +52,9 @@ struct OutfitSuggestion: Codable, Sendable, Equatable {
 /// strategy must accept naive timestamps (assume UTC) or decoding this response
 /// will fail.
 struct DailySuggestionsResponse: Codable, Sendable, Equatable {
+    /// Groups this generation batch (RI-1) — every suggestion's `outfitIndex` is
+    /// addressed against this id via `POST /recommendations/{id}/feedback`.
+    let recommendationId: String
     let suggestions: [OutfitSuggestion]
     let totalSuggestions: Int
     let generatedAt: Date

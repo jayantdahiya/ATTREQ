@@ -40,6 +40,8 @@ class OutfitScores(BaseModel):
     color_harmony: float = Field(..., description="Color compatibility score (0-1)")
     formality: float = Field(..., description="Formality matching score (0-1)")
     preference_bonus: float = Field(..., description="User preference bonus (0-1)")
+    style_dna: float | None = Field(None, description="Style DNA affinity score (0-1)")
+    behaviour: float | None = Field(None, description="Learned behaviour-weight score (0-1)")
     total: float = Field(..., description="Total combined score (0-1)")
 
 
@@ -54,11 +56,13 @@ class OutfitSuggestion(BaseModel):
     scores: OutfitScores = Field(..., description="Scoring breakdown")
     weather_context: dict[str, Any] = Field(..., description="Weather data used for generation")
     occasion_context: str = Field(..., description="Occasion type")
+    outfit_index: int = Field(..., description="0-based position within the shown batch")
 
 
 class DailySuggestionsResponse(BaseModel):
     """Response containing daily outfit suggestions."""
 
+    recommendation_id: str = Field(..., description="Groups this generation batch for feedback/telemetry")
     suggestions: list[OutfitSuggestion] = Field(..., description="List of outfit suggestions")
     total_suggestions: int = Field(..., description="Number of suggestions returned")
     generated_at: str = Field(..., description="ISO timestamp when suggestions were generated")

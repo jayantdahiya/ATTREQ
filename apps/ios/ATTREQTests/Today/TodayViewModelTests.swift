@@ -4,8 +4,14 @@
 //
 //  TodayViewModel behavior against mocked backend responses: load/refresh
 //  states and params, the RN action semantics (Wear = create + mark-worn,
-//  heart = feedback 1 and stay, X = feedback -1 and advance, Skip = local
-//  advance only, create-or-reuse per suggestion), and the greeting helpers.
+//  heart = feedback 1 and stay, X = feedback -1 and advance, create-or-reuse
+//  per suggestion), and the greeting helpers.
+//
+//  RI-1: Skip and X (dismiss) now open the rejection-reason sheet
+//  (`isPresentingRejectionSheet`) instead of acting immediately; only
+//  `confirmRejection(reason:note:)` performs the deferred action (plus, for
+//  dismiss, the existing unchanged outfit-level -1 call) and the new
+//  `POST /recommendations/{id}/feedback` telemetry call.
 //
 
 import Foundation
@@ -73,7 +79,7 @@ private let weatherJSON = """
 "humidity":40,"wind_speed":3.2,"icon":"01d"}
 """
 
-private func suggestionJSON(top: String, bottom: String, accessory: String? = nil) -> String {
+private func suggestionJSON(top: String, bottom: String, accessory: String? = nil, index: Int) -> String {
     let accessoryJSON = accessory.map {
         #"{"id":"\#($0)","category":"accessory","color_primary":null,"pattern":null,"image_url":null,"thumbnail_url":null}"#
     } ?? "null"
@@ -85,14 +91,17 @@ private func suggestionJSON(top: String, bottom: String, accessory: String? = ni
     "accessory_item":\(accessoryJSON),\
     "scores":{"color_harmony":0.8,"formality":0.7,"preference_bonus":0.1,"total":0.86},\
     "weather_context":\(weatherJSON),\
-    "occasion_context":"casual"}
+    "occasion_context":"casual",\
+    "outfit_index":\(index)}
     """
 }
 
 /// Two suggestions: the second carries an accessory (exercises accessory_ids).
-private func dailyJSON() -> Data {
+/// `recommendation_id` groups the batch for RI-1 feedback calls.
+private func dailyJSON(recommendationId: String = "rec-1") -> Data {
     Data("""
-    {"suggestions":[\(suggestionJSON(top: "t-1", bottom: "b-1")),\(suggestionJSON(top: "t-2", bottom: "b-2", accessory: "a-2"))],\
+    {"recommendation_id":"\(recommendationId)",\
+    "suggestions":[\(suggestionJSON(top: "t-1", bottom: "b-1", index: 0)),\(suggestionJSON(top: "t-2", bottom: "b-2", accessory: "a-2", index: 1))],\
     "total_suggestions":2,"generated_at":"2026-07-15T06:00:00",\
     "weather":\(weatherJSON),"occasion":"casual","cached":false}
     """.utf8)
@@ -147,6 +156,12 @@ struct TodayViewModelTests {
                 let path = request.url?.path() ?? ""
                 if path.hasSuffix("recommendations/daily") {
                     return (dailyStatus, dailyBody ?? dailyJSON())
+                }
+                // RI-1: POST /recommendations/{id}/feedback — checked before the
+                // generic "/feedback" suffix below, which is the OUTFIT-level
+                // endpoint. `requestVoid` on the client side ignores this body.
+                if path.contains("/recommendations/"), path.hasSuffix("/feedback") {
+                    return (200, Data("{}".utf8))
                 }
                 if request.httpMethod == "POST", path.hasSuffix("/outfits") {
                     return (createStatus, createBody ?? outfitJSON(id: "o-1"))
@@ -260,15 +275,19 @@ struct TodayViewModelTests {
         let (viewModel, _) = Self.makeModels()
 
         await viewModel.load()
-        viewModel.skip() // mid-session position that must survive tab switches
+        // Mid-session position that must survive tab switches. Skip now opens
+        // the rejection sheet (RI-1); confirming with no reason advances,
+        // same as the old immediate-advance behavior, plus one telemetry POST.
+        viewModel.skip()
+        _ = await viewModel.confirmRejection(reason: nil, note: nil)
 
         await viewModel.load() // tab re-entry
-        #expect(captured.withLock { $0.count } == 1) // no redundant refetch
+        #expect(captured.withLock { $0.count } == 2) // daily + skip's feedback POST, no redundant refetch
         #expect(viewModel.currentIndex == 1)
         #expect(viewModel.state == .loaded)
 
         await viewModel.refresh() // pull-to-refresh: full reset as before
-        #expect(captured.withLock { $0.count } == 2)
+        #expect(captured.withLock { $0.count } == 3)
         #expect(viewModel.currentIndex == 0)
     }
 
@@ -291,7 +310,8 @@ struct TodayViewModelTests {
     @Test func loadWithZeroSuggestionsBecomesEmpty() async throws {
         defer { Self.resetHandler() }
         _ = Self.installRouter(dailyBody: Data("""
-        {"suggestions":[],"total_suggestions":0,"generated_at":"2026-07-15T06:00:00",\
+        {"recommendation_id":"rec-empty",\
+        "suggestions":[],"total_suggestions":0,"generated_at":"2026-07-15T06:00:00",\
         "weather":\(weatherJSON),"occasion":"casual","cached":false}
         """.utf8))
         let (viewModel, _) = Self.makeModels()
@@ -302,23 +322,56 @@ struct TodayViewModelTests {
         #expect(viewModel.weather != nil) // weather strip still renders
     }
 
-    // MARK: Skip (local only)
+    // MARK: Skip (RI-1: opens the rejection sheet; confirmRejection advances)
 
-    @Test func skipAdvancesAndWrapsWithoutAnyAPICall() async throws {
+    @Test func skipOpensRejectionSheetWithoutAdvancingOrAnyAPICall() async throws {
         defer { Self.resetHandler() }
         let captured = Self.installRouter()
         let (viewModel, _) = Self.makeModels()
         await viewModel.load()
 
         viewModel.skip()
+
+        #expect(viewModel.isPresentingRejectionSheet)
+        #expect(viewModel.currentIndex == 0) // unchanged until confirmed
+        // Only the initial GET happened — opening the sheet never touches the network.
+        #expect(captured.withLock { $0.count } == 1)
+    }
+
+    @Test func confirmRejectionAfterSkipRecordsTelemetryAndAdvancesAndWraps() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.installRouter()
+        let (viewModel, _) = Self.makeModels()
+        await viewModel.load()
+
+        viewModel.skip()
+        let recorded = await viewModel.confirmRejection(reason: .tooFormal, note: "  too dressy  ")
+
+        #expect(!recorded) // skip never creates/records an outfit
+        #expect(!viewModel.isPresentingRejectionSheet)
         #expect(viewModel.currentIndex == 1)
         #expect(viewModel.current?.topItemId == "t-2")
 
-        viewModel.skip()
-        #expect(viewModel.currentIndex == 0) // wraps
+        let requests = captured.withLock { $0 }
+        try #require(requests.count == 2) // daily, recommendations feedback
+        #expect(requests[1].method == "POST")
+        #expect(requests[1].path == "/api/v1/recommendations/rec-1/feedback")
+        let body = try Self.json(requests[1].body)
+        #expect(body == [
+            "outfit_index": 0,
+            "action": "rejected",
+            "rejection_reason": "too_formal",
+            "rejection_note": "too dressy", // trimmed
+        ] as NSDictionary)
 
-        // Only the initial GET happened — skip never touches the network.
-        #expect(captured.withLock { $0.count } == 1)
+        // A second skip + bare "Skip" confirm (no reason) wraps back to 0 and
+        // omits both optional fields entirely (not `null` — simply absent).
+        viewModel.skip()
+        _ = await viewModel.confirmRejection(reason: nil, note: nil)
+        #expect(viewModel.currentIndex == 0)
+        let secondBody = try Self.json(captured.withLock { $0 }.last?.body)
+        #expect(secondBody["rejection_reason"] == nil)
+        #expect(secondBody["rejection_note"] == nil)
     }
 
     // MARK: Wear
@@ -336,7 +389,8 @@ struct TodayViewModelTests {
         #expect(viewModel.errorMessage == nil)
 
         let requests = captured.withLock { $0 }
-        try #require(requests.count == 3) // daily, create, wear
+        // daily, create, wear, recommendations feedback (RI-1 accepted signal).
+        try #require(requests.count == 4)
 
         #expect(requests[1].method == "POST")
         #expect(requests[1].path == "/api/v1/outfits")
@@ -352,6 +406,13 @@ struct TodayViewModelTests {
         #expect(requests[2].path == "/api/v1/outfits/o-1/wear")
         let wearBody = try Self.json(requests[2].body)
         #expect(wearBody == ["worn_date": TodayViewModel.todayWornDate()] as NSDictionary)
+
+        // RI-1: wear also fires the recommendation-level `accepted` signal —
+        // the positive half of the preference pair for this shown batch.
+        #expect(requests[3].method == "POST")
+        #expect(requests[3].path == "/api/v1/recommendations/rec-1/feedback")
+        let acceptedBody = try Self.json(requests[3].body)
+        #expect(acceptedBody == ["outfit_index": 0, "action": "accepted"] as NSDictionary)
     }
 
     @Test func wearIncludesAccessoryIdWhenSuggestionHasOne() async throws {
@@ -359,11 +420,15 @@ struct TodayViewModelTests {
         let captured = Self.installRouter()
         let (viewModel, outfits) = Self.makeModels()
         await viewModel.load()
-        viewModel.skip() // move to t-2/b-2 which carries accessory a-2
+        // Move to t-2/b-2 (carries accessory a-2) via the RI-1 rejection sheet.
+        viewModel.skip()
+        _ = await viewModel.confirmRejection(reason: nil, note: nil)
 
         _ = await viewModel.wear(using: outfits)
 
-        let createBody = try Self.json(captured.withLock { $0 }[1].body)
+        // requests: 0=daily, 1=recommendations feedback (from confirmRejection),
+        // 2=outfits create (from wear).
+        let createBody = try Self.json(captured.withLock { $0 }[2].body)
         #expect(createBody["accessory_ids"] as? [String] == ["a-2"])
         #expect(createBody["top_item_id"] as? String == "t-2")
     }
@@ -406,21 +471,40 @@ struct TodayViewModelTests {
         #expect(body == ["feedback_score": 1] as NSDictionary)
     }
 
-    @Test func dismissSubmitsFeedbackScoreMinusOneAndAdvances() async throws {
+    /// RI-1: `dismiss(using:)` now just opens the rejection sheet — the
+    /// existing outfit-level -1 call and the new recommendation-level
+    /// `rejected` telemetry both happen inside `confirmRejection`.
+    @Test func dismissOpensSheetAndConfirmRejectionSubmitsFeedbackMinusOneAndTelemetryThenAdvances() async throws {
         defer { Self.resetHandler() }
         let captured = Self.installRouter()
         let (viewModel, outfits) = Self.makeModels()
         await viewModel.load()
 
-        let succeeded = await viewModel.dismiss(using: outfits)
+        viewModel.dismiss(using: outfits)
+        #expect(viewModel.isPresentingRejectionSheet)
+        #expect(viewModel.currentIndex == 0) // unchanged until confirmed
+
+        let succeeded = await viewModel.confirmRejection(reason: .dislikeItem, note: nil)
 
         #expect(succeeded)
+        #expect(!viewModel.isPresentingRejectionSheet)
         #expect(viewModel.currentIndex == 1)
 
         let requests = captured.withLock { $0 }
-        #expect(requests.last?.path == "/api/v1/outfits/o-1/feedback")
-        let body = try Self.json(requests.last?.body)
-        #expect(body == ["feedback_score": -1] as NSDictionary)
+        // daily, outfits create, outfits/{id}/feedback (-1), recommendations feedback.
+        try #require(requests.count == 4)
+
+        #expect(requests[2].path == "/api/v1/outfits/o-1/feedback")
+        let feedbackBody = try Self.json(requests[2].body)
+        #expect(feedbackBody == ["feedback_score": -1] as NSDictionary)
+
+        #expect(requests[3].path == "/api/v1/recommendations/rec-1/feedback")
+        let telemetryBody = try Self.json(requests[3].body)
+        #expect(telemetryBody == [
+            "outfit_index": 0,
+            "action": "rejected",
+            "rejection_reason": "dislike_item",
+        ] as NSDictionary)
     }
 
     /// RN `persistedOutfits`: heart then wear on the same suggestion creates
@@ -437,7 +521,10 @@ struct TodayViewModelTests {
         let requests = captured.withLock { $0 }
         let creates = requests.filter { $0.method == "POST" && $0.path == "/api/v1/outfits" }
         #expect(creates.count == 1)
-        #expect(requests.last?.path == "/api/v1/outfits/o-1/wear")
+        // Last request is now the RI-1 recommendation-level `accepted` signal
+        // that `wear` fires after a successful mark-worn.
+        #expect(requests.last?.path == "/api/v1/recommendations/rec-1/feedback")
+        #expect(requests.dropLast().last?.path == "/api/v1/outfits/o-1/wear")
     }
 
     // MARK: Presentational titles

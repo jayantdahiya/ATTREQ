@@ -10,6 +10,8 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://attreq_user:attreq_password@localhost:5432/attreq_db")
 os.environ.setdefault("POSTGRES_DB", "attreq_db")
@@ -25,6 +27,9 @@ from attreq_api.models.wardrobe import WardrobeItem
 
 
 class DummyDB:
+    def add(self, *args, **kwargs):  # pragma: no cover - placeholder for dependency override
+        return None
+
     async def execute(self, *args, **kwargs):  # pragma: no cover - placeholder for dependency override
         return None
 
@@ -120,3 +125,40 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 def dummy_db() -> DummyDB:
     return DummyDB()
+
+
+@pytest.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Real (Postgres) async session — genuinely new test infra for RI-1.
+
+    Every other fixture in this file mocks `DummyDB`; the new
+    RecommendationEventCRUD/UserEventCRUD methods commit internally (get_db never
+    commits on its own — see config/database.py), so a plain `session.rollback()`
+    would not undo their inserts. Tests that need real persistence must clean up
+    explicitly (see the `real_user` fixture below, which deletes its own throwaway
+    user row and relies on ON DELETE CASCADE for dependents).
+    """
+    from attreq_api.config.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        yield session
+        await session.close()
+
+
+@pytest.fixture
+async def real_user(db_session: AsyncSession) -> AsyncGenerator[User, None]:
+    """A real, persisted throwaway user for real-DB tests.
+
+    Cleanup deletes only this user's row by id; ON DELETE CASCADE on
+    recommendation_events.user_id / user_events.user_id takes care of dependents,
+    so we never need `rollback()` to undo the CRUD-internal commits.
+    """
+    user = build_user(email=f"ri1-test-{uuid.uuid4()}@example.com")
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    yield user
+
+    await db_session.execute(delete(User).where(User.id == user.id))
+    await db_session.commit()

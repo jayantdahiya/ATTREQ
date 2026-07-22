@@ -282,7 +282,8 @@ extension OutfitSuggestion {
                 total: 0.87
             ),
             weatherContext: weather,
-            occasionContext: "Casual"
+            occasionContext: "Casual",
+            outfitIndex: 0
         )
     }
 }

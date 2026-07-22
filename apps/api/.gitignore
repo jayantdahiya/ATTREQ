@@ -155,3 +155,13 @@ logs/
 
 # Docker
 docker-compose.override.yml
+
+# RI-1 eval harness — run artifacts, not fixtures (see scripts/eval_tagging.py,
+# scripts/eval_outfits.py). The manifest/labels under tests/fixtures/eval/ ARE
+# checked in — only this run-output directory is ignored.
+eval_results/*
+!eval_results/.gitkeep
+
+# RI-1 eval harness — semi-manual DeepFashion-MultiModal image cache (downloaded
+# locally via --images-dir or gdown; not committed).
+tests/fixtures/eval/deepfashion_images/

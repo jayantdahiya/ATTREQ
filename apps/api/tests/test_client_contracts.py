@@ -387,3 +387,133 @@ async def test_submit_outfit_feedback_uses_feedback_score_contract(monkeypatch, 
     assert response.json()["feedback_score"] == 1
 
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_wear_emits_worn_and_style_dna_events(monkeypatch, client, dummy_db):
+    user = build_user()
+    top_item = build_wardrobe_item(user_id=user.id)
+    bottom_item = build_wardrobe_item(user_id=user.id, category="jeans")
+    outfit_record = build_outfit(user_id=user.id, top_item_id=top_item.id, bottom_item_id=bottom_item.id)
+
+    user_events_created: list[tuple[str, dict]] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_outfit(db, outfit_id, user_id=None, load_items=False):
+        return outfit_record
+
+    async def fake_mark_as_worn(db, outfit_id, worn_date):
+        outfit_record.worn_date = worn_date
+        return outfit_record
+
+    async def fake_get_item(db, item_id, user_id=None):
+        if item_id == top_item.id:
+            return top_item
+        if item_id == bottom_item.id:
+            return bottom_item
+        return None
+
+    async def fake_update_item(db, item_id, data):
+        return None
+
+    async def fake_user_event_create(db, *, user_id, event_type, payload=None):
+        user_events_created.append((event_type, payload or {}))
+
+    async def fake_update_behaviour_weights(db, user_id, outfit_id, signal):
+        return True  # simulate a real mutation
+
+    monkeypatch.setattr(outfits.outfit_crud, "get_by_id", fake_get_outfit)
+    monkeypatch.setattr(outfits.outfit_crud, "mark_as_worn", fake_mark_as_worn)
+    monkeypatch.setattr(outfits.wardrobe_crud, "get_by_id", fake_get_item)
+    monkeypatch.setattr(outfits.wardrobe_crud, "update", fake_update_item)
+    monkeypatch.setattr(outfits.user_event_crud, "create", fake_user_event_create)
+    monkeypatch.setattr(
+        "attreq_api.services.style_dna.style_dna_service.update_behaviour_weights",
+        fake_update_behaviour_weights,
+    )
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.post(
+        f"/api/v1/outfits/{outfit_record.id}/wear",
+        json={"worn_date": str(date(2026, 4, 18))},
+    )
+
+    assert response.status_code == 200
+
+    event_types = [event_type for event_type, _ in user_events_created]
+    assert "outfit_worn" in event_types
+    assert "style_dna_updated" in event_types
+
+    worn_payload = next(payload for event_type, payload in user_events_created if event_type == "outfit_worn")
+    assert worn_payload["outfit_id"] == str(outfit_record.id)
+
+    style_dna_payload = next(
+        payload for event_type, payload in user_events_created if event_type == "style_dna_updated"
+    )
+    assert style_dna_payload["signal"] == "worn"
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_wear_skips_style_dna_event_when_not_mutated(monkeypatch, client, dummy_db):
+    user = build_user()
+    top_item = build_wardrobe_item(user_id=user.id)
+    bottom_item = build_wardrobe_item(user_id=user.id, category="jeans")
+    outfit_record = build_outfit(user_id=user.id, top_item_id=top_item.id, bottom_item_id=bottom_item.id)
+
+    user_events_created: list[tuple[str, dict]] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_outfit(db, outfit_id, user_id=None, load_items=False):
+        return outfit_record
+
+    async def fake_mark_as_worn(db, outfit_id, worn_date):
+        outfit_record.worn_date = worn_date
+        return outfit_record
+
+    async def fake_get_item(db, item_id, user_id=None):
+        if item_id == top_item.id:
+            return top_item
+        if item_id == bottom_item.id:
+            return bottom_item
+        return None
+
+    async def fake_update_item(db, item_id, data):
+        return None
+
+    async def fake_user_event_create(db, *, user_id, event_type, payload=None):
+        user_events_created.append((event_type, payload or {}))
+
+    async def fake_update_behaviour_weights(db, user_id, outfit_id, signal):
+        return False  # no style_preferences set for this user — no mutation
+
+    monkeypatch.setattr(outfits.outfit_crud, "get_by_id", fake_get_outfit)
+    monkeypatch.setattr(outfits.outfit_crud, "mark_as_worn", fake_mark_as_worn)
+    monkeypatch.setattr(outfits.wardrobe_crud, "get_by_id", fake_get_item)
+    monkeypatch.setattr(outfits.wardrobe_crud, "update", fake_update_item)
+    monkeypatch.setattr(outfits.user_event_crud, "create", fake_user_event_create)
+    monkeypatch.setattr(
+        "attreq_api.services.style_dna.style_dna_service.update_behaviour_weights",
+        fake_update_behaviour_weights,
+    )
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.post(
+        f"/api/v1/outfits/{outfit_record.id}/wear",
+        json={"worn_date": str(date(2026, 4, 18))},
+    )
+
+    assert response.status_code == 200
+
+    event_types = [event_type for event_type, _ in user_events_created]
+    assert "outfit_worn" in event_types
+    assert "style_dna_updated" not in event_types
+
+    app.dependency_overrides.clear()

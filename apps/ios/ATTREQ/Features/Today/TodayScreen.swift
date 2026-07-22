@@ -12,6 +12,11 @@
 //  failed (clay banner + retry), loaded. Pull-to-refresh in every scroll state
 //  → `viewModel.refresh()` (GET /recommendations/daily?refresh=true).
 //
+//  RI-1: Skip/X on `RecommendationCard` now open `RejectionReasonSheet`
+//  (bound to `viewModel.isPresentingRejectionSheet`) instead of acting
+//  immediately — the sheet's confirmation is what actually records the
+//  telemetry + (for dismiss) the existing outfit-level -1 call.
+//
 
 import SwiftUI
 
@@ -44,6 +49,21 @@ struct TodayScreen: View {
             }
         }
         .task { await viewModel.load() }
+        .sheet(isPresented: rejectionSheetBinding) {
+            RejectionReasonSheet { reason, note in
+                recordThenNotify { await viewModel.confirmRejection(reason: reason, note: note) }
+            }
+        }
+    }
+
+    /// Two-way bridge onto the view model's `isPresentingRejectionSheet` —
+    /// SwiftUI needs a settable binding for `.sheet(isPresented:)`, including
+    /// to flip it back to `false` on an interactive swipe-away.
+    private var rejectionSheetBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.isPresentingRejectionSheet },
+            set: { viewModel.isPresentingRejectionSheet = $0 }
+        )
     }
 
     // MARK: - Scroll scaffold (header + weather strip + state content)
@@ -124,7 +144,7 @@ struct TodayScreen: View {
                 onWear: { recordThenNotify { await viewModel.wear(using: outfitsRepository) } },
                 onSkip: { viewModel.skip() },
                 onLove: { recordThenNotify { await viewModel.love(using: outfitsRepository) } },
-                onDismiss: { recordThenNotify { await viewModel.dismiss(using: outfitsRepository) } }
+                onDismiss: { viewModel.dismiss(using: outfitsRepository) }
             )
         }
 
