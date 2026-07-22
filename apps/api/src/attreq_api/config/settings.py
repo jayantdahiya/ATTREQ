@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     style_dna_max_photos: int = Field(default=8, alias="STYLE_DNA_MAX_PHOTOS")
     style_dna_llm_concurrency: int = Field(default=3, alias="STYLE_DNA_LLM_CONCURRENCY")
 
+    # Wardrobe batch upload settings
+    wardrobe_batch_upload_max_files: int = Field(
+        default=20, alias="WARDROBE_BATCH_UPLOAD_MAX_FILES"
+    )
+    wardrobe_batch_processing_concurrency: int = Field(
+        default=3, alias="WARDROBE_BATCH_PROCESSING_CONCURRENCY"
+    )
+
     @validator("backend_cors_origins", pre=True)
     def assemble_cors_origins(cls, v):
         """Parse CORS origins from string or list."""

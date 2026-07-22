@@ -45,6 +45,9 @@ struct ProfileScreen: View {
     @State private var showLocationSheet = false
     @State private var showStyleSheet = false
     @State private var isLoggingOut = false
+    /// "How recommendations work" trust screen (RI-7) — pushed here manually;
+    /// also shown once automatically post-onboarding from `MainTabsView`.
+    @State private var showTrustScreen = false
 
     private var user: User? {
         if case let .authenticated(user) = session.authState { return user }
@@ -78,6 +81,9 @@ struct ProfileScreen: View {
                         preferencesCard
                             .padding(.bottom, 18)
 
+                        trustCard
+                            .padding(.bottom, 18)
+
                         footer
                     }
                     .padding(.horizontal, 24)
@@ -90,6 +96,9 @@ struct ProfileScreen: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showStyleDna) {
                 StyleDnaProfileView()
+            }
+            .navigationDestination(isPresented: $showTrustScreen) {
+                HowRecommendationsWorkView()
             }
         }
         .task {
@@ -276,6 +285,35 @@ struct ProfileScreen: View {
         .buttonStyle(.plain)
         .attreqCard(padding: 0)
         .accessibilityIdentifier("row-style-dna")
+    }
+
+    // MARK: - Trust row (RI-7)
+
+    private var trustCard: some View {
+        Button {
+            showTrustScreen = true
+        } label: {
+            HStack(spacing: 12) {
+                AttreqIcon.heart.view(size: 15, color: Theme.t2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("How recommendations work")
+                        .font(.attreqBody(14))
+                        .foregroundStyle(Theme.text)
+                    MonoLabel("Only your wardrobe — never ads")
+                }
+
+                Spacer(minLength: 8)
+
+                AttreqIcon.chevron.view(size: 13, color: Theme.t3)
+            }
+            .padding(.vertical, 13)
+            .padding(.horizontal, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .attreqCard(padding: 0)
+        .accessibilityIdentifier("row-how-recommendations-work")
     }
 
     // MARK: - Preferences card

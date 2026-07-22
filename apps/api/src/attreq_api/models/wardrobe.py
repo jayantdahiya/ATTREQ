@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import ARRAY, Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, Column, Date, DateTime, Float, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,6 +47,11 @@ class WardrobeItem(Base):
     wear_count = Column(Integer, nullable=False, default=0)
     last_worn = Column(Date, nullable=True)
 
+    # Retention / trust surfaces (RI-7)
+    status = Column(String(20), nullable=False, default="active", index=True)  # active|archived
+    purchase_price = Column(Numeric(10, 2), nullable=True)
+    brand = Column(String(100), nullable=True)  # no index — per-user grouping is tiny
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
@@ -55,6 +60,12 @@ class WardrobeItem(Base):
 
     # Relationships
     user = relationship("User", back_populates="wardrobe_items")
+    photos = relationship(
+        "WardrobeItemPhoto",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="WardrobeItemPhoto.created_at",
+    )
 
     # Outfits where this item is the top
     outfits_as_top = relationship(

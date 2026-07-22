@@ -55,7 +55,7 @@ private let weatherJSON = """
 "humidity":40,"wind_speed":3.2,"icon":"01d"}
 """
 
-private func suggestionJSON(top: String, bottom: String, occasion: String = "casual") -> String {
+private func suggestionJSON(top: String, bottom: String, occasion: String = "casual", index: Int = 0) -> String {
     """
     {"top_item_id":"\(top)",\
     "top_item":{"id":"\(top)","category":"top","color_primary":"navy","pattern":"solid",\
@@ -66,15 +66,21 @@ private func suggestionJSON(top: String, bottom: String, occasion: String = "cas
     "accessory_item":null,\
     "scores":{"color_harmony":0.8,"formality":0.7,"preference_bonus":0.1,"total":0.86},\
     "weather_context":\(weatherJSON),\
-    "occasion_context":"\(occasion)"}
+    "occasion_context":"\(occasion)",\
+    "outfit_index":\(index)}
     """
 }
 
 /// `generated_at` is deliberately timezone-naive — the backend emits
-/// `datetime.utcnow().isoformat()`.
-private func dailyResponseJSON(suggestions: [String], occasion: String = "casual", cached: Bool = false) -> Data {
+/// `datetime.utcnow().isoformat()`. `recommendation_id` groups the batch
+/// (RI-1) — required on the response model even when a test doesn't
+/// exercise the feedback flow.
+private func dailyResponseJSON(
+    suggestions: [String], occasion: String = "casual", cached: Bool = false, recommendationId: String = "rec-1"
+) -> Data {
     Data("""
-    {"suggestions":[\(suggestions.joined(separator: ","))],\
+    {"recommendation_id":"\(recommendationId)",\
+    "suggestions":[\(suggestions.joined(separator: ","))],\
     "total_suggestions":\(suggestions.count),\
     "generated_at":"2026-07-15T06:35:37.729782",\
     "weather":\(weatherJSON),\
@@ -172,7 +178,10 @@ struct RecommendationsRepositoryTests {
         _ = Self.capture(
             status: 200,
             body: dailyResponseJSON(
-                suggestions: [suggestionJSON(top: "t-1", bottom: "b-1"), suggestionJSON(top: "t-2", bottom: "b-2")],
+                suggestions: [
+                    suggestionJSON(top: "t-1", bottom: "b-1", index: 0),
+                    suggestionJSON(top: "t-2", bottom: "b-2", index: 1),
+                ],
                 cached: true
             )
         )

@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// The four root tabs of the app.
+/// The five root tabs of the app (RI-7 added `.stats`).
 enum AttreqTab: CaseIterable {
-    case today, wardrobe, history, profile
+    case today, wardrobe, stats, history, profile
 
     var label: String {
         switch self {
         case .today: "TODAY"
         case .wardrobe: "WARDROBE"
+        case .stats: "STATS"
         case .history: "HISTORY"
         case .profile: "PROFILE"
         }
@@ -17,6 +18,7 @@ enum AttreqTab: CaseIterable {
         switch self {
         case .today: .sun
         case .wardrobe: .shirt
+        case .stats: .chart
         case .history: .book
         case .profile: .person
         }

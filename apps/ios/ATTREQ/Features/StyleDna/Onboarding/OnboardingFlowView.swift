@@ -17,6 +17,11 @@ struct OnboardingFlowView: View {
         case upload
         case results
         case review
+        /// RI-7: seeds the wardrobe directly with garment photos, whether the
+        /// user built a Style DNA or skipped it — reached from all three
+        /// prior paths (skip / "Looks right" with no detected items /
+        /// review confirm) instead of completing onboarding directly.
+        case wardrobeCapture
     }
 
     @Environment(AppSession.self) private var session
@@ -54,7 +59,9 @@ struct OnboardingFlowView: View {
     /// artboard but is disabled. After a successful build (results/review
     /// steps) it is ALSO disabled: the photos are uploaded and the wardrobe
     /// seeded, so returning to upload would only re-upload — RN has no back
-    /// on those screens either.
+    /// on those screens either. The wardrobe-capture step (RI-7) is reachable
+    /// from a Style-DNA SKIP too (no `uploadResponse`), where "back to
+    /// results" wouldn't have anything to show, so it's unconditionally disabled.
     private var header: some View {
         HStack(spacing: 10) {
             Button(action: goBack) {
@@ -70,7 +77,7 @@ struct OnboardingFlowView: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, -7)
-            .disabled(step == .upload || model.uploadResponse != nil || model.isCompleting)
+            .disabled(step == .upload || step == .wardrobeCapture || model.uploadResponse != nil || model.isCompleting)
             .accessibilityLabel("Back")
 
             MonoLabel("Style DNA Setup")
@@ -86,7 +93,11 @@ struct OnboardingFlowView: View {
             UploadStyleView(
                 model: model,
                 onBuild: { Task { await build() } },
-                onSkip: { Task { await model.skip(session: session) } }
+                // RI-7: skipping Style DNA no longer completes onboarding
+                // directly — it still needs actual wardrobe items to recommend
+                // from, so it lands on the wardrobe-capture step like every
+                // other path.
+                onSkip: { go(to: .wardrobeCapture) }
             )
         case .results:
             ResultsView(
@@ -96,13 +107,28 @@ struct OnboardingFlowView: View {
         case .review:
             ReviewItemsView(
                 model: model,
-                onConfirm: { Task { await confirmReview() } }
+                onConfirm: { go(to: .wardrobeCapture) }
+            )
+        case .wardrobeCapture:
+            WardrobeCaptureView(
+                model: model,
+                wardrobeRepository: wardrobeRepository,
+                recommendationsRepository: recommendationsRepository,
+                onFinish: { Task { await model.skip(session: session) } }
             )
         }
     }
 
     private var repository: StyleDnaRepository {
         StyleDnaRepository(apiClient: session.api)
+    }
+
+    private var wardrobeRepository: WardrobeRepository {
+        WardrobeRepository(apiClient: session.api)
+    }
+
+    private var recommendationsRepository: RecommendationsRepository {
+        RecommendationsRepository(apiClient: session.api)
     }
 
     private func build() async {
@@ -113,22 +139,19 @@ struct OnboardingFlowView: View {
     }
 
     /// Continue from results: review detected items when there are any;
-    /// otherwise mirror RN's "Looks right →" and complete onboarding directly.
+    /// otherwise mirror RN's "Looks right →" and move to the wardrobe-capture
+    /// step (RI-7) instead of completing onboarding directly.
     private func advanceFromResults() {
         if model.detectedItems.isEmpty {
-            Task { await confirmReview() }
+            go(to: .wardrobeCapture)
         } else {
             go(to: .review)
         }
     }
 
-    private func confirmReview() async {
-        await model.confirmReview(session: session)
-    }
-
     /// Unreachable today (the back button is disabled on upload and, after a
-    /// successful build, on results/review too), but kept so the header stays
-    /// correct if a pre-build step is ever inserted.
+    /// successful build, on every later step too), but kept so the header
+    /// stays correct if a pre-build step is ever inserted.
     private func goBack() {
         switch step {
         case .upload:
@@ -136,6 +159,8 @@ struct OnboardingFlowView: View {
         case .results:
             go(to: .upload)
         case .review:
+            go(to: .results)
+        case .wardrobeCapture:
             go(to: .results)
         }
     }

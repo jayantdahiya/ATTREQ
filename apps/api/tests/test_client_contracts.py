@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+import uuid
 from datetime import date
-from typing import TYPE_CHECKING
 
 import pytest
-
-if TYPE_CHECKING:
-    import uuid
 from fastapi import HTTPException
 
 from attreq_api.api.v1 import deps
-from attreq_api.api.v1.endpoints import auth, outfits, recommendations, users
+from attreq_api.api.v1.endpoints import auth, outfits, recommendations, stats, users, wardrobe
 from attreq_api.config import security
 from attreq_api.config.database import get_db
 from attreq_api.main import app
-from tests.conftest import build_outfit, build_user, build_wardrobe_item
+from attreq_api.services.recommendation import algorithm
+from attreq_api.workers import batch_image_processor
+from tests.conftest import DummyDB, build_outfit, build_user, build_wardrobe_item
 
 
 @pytest.mark.asyncio
@@ -517,3 +516,478 @@ async def test_wear_skips_style_dna_event_when_not_mutated(monkeypatch, client, 
     assert "style_dna_updated" not in event_types
 
     app.dependency_overrides.clear()
+
+
+# ============================================================================
+# RI-7: Stats endpoints
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_wardrobe_stats_endpoint_returns_mocked_payload(monkeypatch, client, dummy_db):
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    payload = {
+        "total_active_items": 3,
+        "by_category": [{"category": "shirt", "count": 2}, {"category": "jeans", "count": 1}],
+        "by_color_family": [{"family": "cool", "count": 2}, {"family": "neutral", "count": 1}],
+        "by_brand": [{"brand": "Unbranded", "count": 3}],
+        "closet_value": 150.0,
+        "items_missing_price": 0,
+        "never_worn_count": 1,
+        "never_worn_percent": 33.3,
+        "most_worn": [],
+        "least_worn": [],
+        "cost_per_wear": [],
+        "worn_last_30_days": 1,
+        "worn_last_90_days": 2,
+        "generated_at": "2026-07-22",
+        "cached": False,
+    }
+
+    async def fake_get_wardrobe_stats(db, user_id, force_refresh=False):
+        return payload
+
+    monkeypatch.setattr(stats, "get_wardrobe_stats", fake_get_wardrobe_stats)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get("/api/v1/stats/wardrobe")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_active_items"] == 3
+    assert body["closet_value"] == 150.0
+    assert body["never_worn_percent"] == 33.3
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_forgotten_items_endpoint_returns_mocked_payload(monkeypatch, client, dummy_db):
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    payload = {
+        "items": [
+            {
+                "item_id": str(uuid.uuid4()),
+                "category": "hat",
+                "color_primary": "yellow",
+                "thumbnail_url": None,
+                "wear_count": 0,
+                "last_worn": None,
+                "days_since_worn": None,
+                "best_partner": None,
+            }
+        ],
+        "count": 1,
+        "generated_at": "2026-07-22",
+        "cached": False,
+    }
+
+    async def fake_get_forgotten_items(db, user_id, days_threshold=60, force_refresh=False):
+        return payload
+
+    monkeypatch.setattr(stats, "get_forgotten_items", fake_get_forgotten_items)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get("/api/v1/stats/forgotten")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 1
+    assert body["items"][0]["category"] == "hat"
+
+    app.dependency_overrides.clear()
+
+
+# ============================================================================
+# RI-7: Archive / unarchive endpoint
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_archive_wardrobe_item_success(monkeypatch, client, dummy_db):
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id, status="active")
+    weaviate_calls: list[tuple[str, uuid.UUID]] = []
+    invalidate_stats_calls: list[uuid.UUID] = []
+    invalidate_daily_calls: list[uuid.UUID] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_update(db, item_id, update_data):
+        for field, value in update_data.items():
+            setattr(item, field, value)
+        return item
+
+    async def fake_invalidate_stats(user_id):
+        invalidate_stats_calls.append(user_id)
+
+    async def fake_invalidate_daily(user_id):
+        invalidate_daily_calls.append(user_id)
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "update", fake_update)
+    monkeypatch.setattr(wardrobe.weaviate_service, "is_connected", lambda: True)
+    monkeypatch.setattr(
+        wardrobe.weaviate_service,
+        "delete_item",
+        lambda item_id: weaviate_calls.append(("delete", item_id)),
+    )
+    monkeypatch.setattr(wardrobe, "invalidate_wardrobe_stats_cache", fake_invalidate_stats)
+    monkeypatch.setattr(wardrobe, "invalidate_daily_suggestions", fake_invalidate_daily)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.patch(
+        f"/api/v1/wardrobe/items/{item.id}/status", json={"status": "archived"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "archived"
+    assert ("delete", item.id) in weaviate_calls
+    assert invalidate_stats_calls == [user.id]
+    assert invalidate_daily_calls == [user.id]
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_archive_wardrobe_item_unowned_returns_404(monkeypatch, client, dummy_db):
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return None
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.patch(
+        f"/api/v1/wardrobe/items/{uuid.uuid4()}/status", json={"status": "archived"}
+    )
+
+    assert response.status_code == 404
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_archive_wardrobe_item_bad_status_returns_422(client, dummy_db):
+    user = build_user()
+
+    async def override_get_db():
+        yield dummy_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.patch(
+        f"/api/v1/wardrobe/items/{uuid.uuid4()}/status", json={"status": "deleted"}
+    )
+
+    assert response.status_code == 422
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_list_wardrobe_items_archived_status_passed_to_crud(monkeypatch, client, dummy_db):
+    user = build_user()
+    captured_kwargs: dict = {}
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_user(db, user_id, **kwargs):
+        captured_kwargs.update(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_user", fake_get_by_user)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.get("/api/v1/wardrobe/items", params={"status": "archived"})
+
+    assert response.status_code == 200
+    assert captured_kwargs["status"] == "archived"
+
+    app.dependency_overrides.clear()
+
+
+# ============================================================================
+# RI-7: Additional-photo endpoints
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_add_wardrobe_item_photo_returns_201_and_schedules_processing(
+    monkeypatch, client, dummy_db
+):
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id)
+    photo_id = uuid.uuid4()
+    processing_calls: list[uuid.UUID] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_save_upload_file(file, user_id, subdirectory):
+        return ("/tmp/originals/photo.jpg", "/uploads/originals/photo.jpg")
+
+    class FakePhoto:
+        id = photo_id
+
+    async def fake_create(db, item_id, original_image_url):
+        return FakePhoto()
+
+    async def fake_process_photo(photo_id, user_id, original_image_path):
+        processing_calls.append(photo_id)
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.get_storage(), "save_upload_file", fake_save_upload_file)
+    monkeypatch.setattr(wardrobe.wardrobe_photo_crud, "create", fake_create)
+    monkeypatch.setattr(wardrobe, "process_wardrobe_item_photo", fake_process_photo)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.post(
+        f"/api/v1/wardrobe/items/{item.id}/photos",
+        files={"file": ("photo.jpg", b"fake-image-bytes", "image/jpeg")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == str(photo_id)
+    assert body["status"] == "processing"
+    # Background task must have been scheduled and executed with the new photo id.
+    assert processing_calls == [photo_id]
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_delete_wardrobe_item_photo_204(monkeypatch, client, dummy_db):
+    from attreq_api.models.wardrobe_photo import WardrobeItemPhoto
+
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id)
+    photo = WardrobeItemPhoto(
+        id=uuid.uuid4(),
+        item_id=item.id,
+        original_image_url="/uploads/originals/p.jpg",
+        is_primary=False,
+    )
+    delete_calls: list[uuid.UUID] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_get_photo_by_id(db, photo_id, item_id=None):
+        return photo
+
+    async def fake_delete(db, photo_id):
+        delete_calls.append(photo_id)
+        return True
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_photo_crud, "get_by_id", fake_get_photo_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_photo_crud, "delete", fake_delete)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.delete(f"/api/v1/wardrobe/items/{item.id}/photos/{photo.id}")
+
+    assert response.status_code == 204
+    assert delete_calls == [photo.id]
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_delete_primary_photo_returns_400(monkeypatch, client, dummy_db):
+    from attreq_api.models.wardrobe_photo import WardrobeItemPhoto
+
+    user = build_user()
+    item = build_wardrobe_item(user_id=user.id)
+    photo = WardrobeItemPhoto(
+        id=uuid.uuid4(),
+        item_id=item.id,
+        original_image_url="/uploads/originals/p.jpg",
+        is_primary=True,
+    )
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_by_id(db, item_id, user_id=None):
+        return item
+
+    async def fake_get_photo_by_id(db, photo_id, item_id=None):
+        return photo
+
+    monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(wardrobe.wardrobe_photo_crud, "get_by_id", fake_get_photo_by_id)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.delete(f"/api/v1/wardrobe/items/{item.id}/photos/{photo.id}")
+
+    assert response.status_code == 400
+
+    app.dependency_overrides.clear()
+
+
+# ============================================================================
+# RI-7: Archived items excluded from recommendation pools
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_generate_daily_outfits_query_filters_to_active_status():
+    class QueryCapturingDB:
+        def __init__(self):
+            self.queries = []
+
+        async def execute(self, query):
+            self.queries.append(query)
+
+            class FakeScalars:
+                def all(self_inner):
+                    return []
+
+            class FakeResult:
+                def scalars(self_inner):
+                    return FakeScalars()
+
+            return FakeResult()
+
+    db = QueryCapturingDB()
+    user_id = uuid.uuid4()
+
+    result = await algorithm.generate_daily_outfits(
+        db, user_id, weather={"temp": 22, "condition": "Clear"}, occasion="casual"
+    )
+
+    assert result == []
+    assert len(db.queries) == 1
+    compiled = str(db.queries[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "wardrobe_items.status" in compiled
+    assert "'active'" in compiled
+
+
+# ============================================================================
+# RI-7: Batch upload concurrency (bounded, per-task session)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_batch_upload_of_20_all_reach_terminal_status_no_cross_item_swap(monkeypatch):
+    """20 images processed concurrently must all complete, each with its OWN
+    classification result — proving no cross-item state corruption from the
+    per-task-session + bounded-semaphore fix (RI-7 shared-AsyncSession bug).
+    """
+
+    class FakeSessionCM:
+        def __init__(self):
+            self.db = DummyDB()
+
+        async def __aenter__(self):
+            return self.db
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    def fake_async_session_local():
+        return FakeSessionCM()
+
+    updates: dict[uuid.UUID, dict] = {}
+
+    async def fake_update(db, item_id, update_data):
+        updates.setdefault(item_id, {}).update(update_data)
+
+    async def fake_generate_processed_and_thumbnail(image_path, user_id, log_ref=None):
+        return image_path, f"processed:{image_path}", f"thumb:{image_path}"
+
+    FAILING_INDEX = 7
+
+    async def fake_detect_clothing(image_path):
+        if image_path == f"/tmp/img_{FAILING_INDEX}.jpg":
+            raise RuntimeError("simulated classifier failure for one image")
+        return {
+            "category": f"category-for-{image_path}",
+            "color_primary": "blue",
+            "color_secondary": None,
+            "pattern": "solid",
+            "season": ["all"],
+            "occasion": ["casual"],
+            "detection_confidence": 0.9,
+            "classification_source": "fallback",
+            "processing_status": "completed",
+        }
+
+    async def fake_invalidate_stats(user_id):
+        return None
+
+    monkeypatch.setattr(batch_image_processor, "AsyncSessionLocal", fake_async_session_local)
+    monkeypatch.setattr(batch_image_processor.wardrobe_crud, "update", fake_update)
+    monkeypatch.setattr(
+        batch_image_processor,
+        "generate_processed_and_thumbnail",
+        fake_generate_processed_and_thumbnail,
+    )
+    monkeypatch.setattr(
+        batch_image_processor.clothing_detection_service, "detect_clothing", fake_detect_clothing
+    )
+    monkeypatch.setattr(
+        batch_image_processor.weaviate_service, "is_connected", lambda: False
+    )
+    monkeypatch.setattr(
+        batch_image_processor, "invalidate_wardrobe_stats_cache", fake_invalidate_stats
+    )
+
+    item_ids = [uuid.uuid4() for _ in range(20)]
+    image_paths = [f"/tmp/img_{i}.jpg" for i in range(20)]
+
+    await batch_image_processor.process_batch_wardrobe_images(
+        item_ids=item_ids,
+        user_id=uuid.uuid4(),
+        image_refs=image_paths,
+        image_urls=image_paths,
+    )
+
+    # All 20 items reached a terminal state — none stuck pending/processing.
+    assert len(updates) == 20
+    for item_id in item_ids:
+        assert updates[item_id]["processing_status"] == "completed"
+
+    # No cross-item classification swap: each item's category matches its OWN
+    # image path, except the one whose detection intentionally failed (falls
+    # back to None but still completes — one bad image never fails the batch).
+    for i, item_id in enumerate(item_ids):
+        expected_path = image_paths[i]
+        if i == FAILING_INDEX:
+            assert updates[item_id]["category"] is None
+        else:
+            assert updates[item_id]["category"] == f"category-for-{expected_path}"

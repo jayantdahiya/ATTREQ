@@ -184,6 +184,13 @@ final class TodayViewModel {
     /// consumed exactly once by `confirmRejection`.
     @ObservationIgnored private var pendingRejection: PendingRejection?
 
+    /// Set when an in-app action (archiving/unarchiving a wardrobe item)
+    /// invalidates today's cached suggestions — the server invalidates its
+    /// own cache immediately on archive, so the client shouldn't assume the
+    /// normal 24h daily-cache staleness window still applies. Mirrors
+    /// `ProfileViewModel.needsRefresh`.
+    @ObservationIgnored private var needsRefresh = false
+
     init(repository: RecommendationsRepository) {
         self.repository = repository
     }
@@ -193,10 +200,18 @@ final class TodayViewModel {
     /// First load / re-entry load. Uses the server's daily cache. Safe to
     /// call repeatedly (`.task` re-fires on every tab switch): once content
     /// is loaded it returns immediately — preserving `currentIndex` and any
-    /// in-flight wear — while failed/empty/initial-loading states retry.
+    /// in-flight wear — unless an in-app action marked it stale (see
+    /// `markStale()`), while failed/empty/initial-loading states retry.
     func load() async {
-        guard state != .loaded else { return }
+        guard state != .loaded || needsRefresh else { return }
         await fetch(refresh: false)
+    }
+
+    /// Invalidate cached suggestions so the next `load()` refetches — called
+    /// after a wardrobe item is archived/unarchived (RI-7), since that
+    /// changes eligibility immediately server-side.
+    func markStale() {
+        needsRefresh = true
     }
 
     /// Pull-to-refresh: `force_refresh=true` regenerates past the daily cache.
@@ -217,6 +232,7 @@ final class TodayViewModel {
             occasion = response.occasion
             recommendationId = response.recommendationId
             errorMessage = nil
+            needsRefresh = false
             state = suggestions.isEmpty ? .empty : .loaded
         } catch {
             guard !Self.isCancellation(error) else { return }
@@ -363,13 +379,17 @@ final class TodayViewModel {
         rejectionNote: String? = nil
     ) async {
         guard let recommendationId else { return }
+        // Trim defensively here too — `RejectionReasonSheet` already trims
+        // before calling back, but `confirmRejection` is a public API any
+        // caller (including tests) can invoke directly with untrimmed text.
+        let trimmedNote = rejectionNote?.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try await repository.submitFeedback(
                 recommendationId: recommendationId,
                 outfitIndex: suggestion.outfitIndex,
                 action: action,
                 rejectionReason: rejectionReason,
-                rejectionNote: rejectionNote
+                rejectionNote: (trimmedNote?.isEmpty ?? true) ? nil : trimmedNote
             )
         } catch {
             logger.error(

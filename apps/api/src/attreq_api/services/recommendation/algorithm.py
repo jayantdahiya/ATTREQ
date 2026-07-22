@@ -14,6 +14,7 @@ from attreq_api.models.outfit import Outfit
 from attreq_api.models.user import User
 from attreq_api.models.wardrobe import WardrobeItem
 from attreq_api.services.ai.embeddings import weaviate_service
+from attreq_api.services.recommendation.color_utils import COOL_COLORS, NEUTRAL_COLORS, WARM_COLORS
 from attreq_api.services.style_dna.scoring import (
     calculate_behaviour_score,
     calculate_style_dna_score,
@@ -191,10 +192,10 @@ def calculate_color_harmony_score(item1: WardrobeItem, item2: WardrobeItem) -> f
     Returns:
         Compatibility score between 0 and 1
     """
-    # Define color relationships
-    neutrals = {"white", "black", "gray", "grey", "beige", "cream", "brown"}
-    warm_colors = {"red", "orange", "yellow", "pink", "coral"}
-    cool_colors = {"blue", "green", "purple", "teal", "turquoise"}
+    # Define color relationships (shared with services/stats via color_utils)
+    neutrals = NEUTRAL_COLORS
+    warm_colors = WARM_COLORS
+    cool_colors = COOL_COLORS
 
     # Complementary pairs
     complementary = {
@@ -311,6 +312,50 @@ def calculate_formality_score(items: list[WardrobeItem]) -> float:
     logger.debug(f"Formality score: {score:.2f} (levels: {formality_levels})")
 
     return score
+
+
+def score_pair(item_a: WardrobeItem, item_b: WardrobeItem) -> float:
+    """Score compatibility of a pair of items (color + formality blend).
+
+    This is the swappable RI-3 seam: the not-yet-built pair scorer will
+    replace this implementation with a learned model. Everything that
+    consumes pairwise compatibility (forgotten-items partner picking, stats)
+    should call this function rather than duplicating scoring logic.
+    """
+    color = calculate_color_harmony_score(item_a, item_b)
+    formality = calculate_formality_score([item_a, item_b])
+    return round(color * 0.5 + formality * 0.5, 4)
+
+
+def category_role(category: str | None) -> str:
+    """Best-effort garment category -> role classification ("top"/"bottom"/"other").
+
+    Backend categories are garment names (shirt, jeans, dress, ...), never
+    literal "top"/"bottom" roles. This helper is a soft heuristic used only as
+    a tiebreak (e.g. preferring an opposite-role partner when scores are close)
+    — it must never be relied upon as the sole basis for pairing or gating.
+    """
+    c = (category or "").lower()
+    tops = {
+        "shirt",
+        "t-shirt",
+        "tshirt",
+        "blouse",
+        "top",
+        "sweater",
+        "hoodie",
+        "jacket",
+        "blazer",
+        "suit",
+    }
+    bottoms = {"jeans", "pants", "trousers", "chinos", "shorts", "skirt", "dress pants", "sweatpants"}
+    if any(k in c for k in bottoms):
+        return "bottom"
+    if "dress" in c:
+        return "other"  # one-piece; not a pairing top/bottom
+    if any(k in c for k in tops):
+        return "top"
+    return "other"
 
 
 # ============================================================================
@@ -488,11 +533,13 @@ async def generate_daily_outfits(
     """
     logger.info(f"Generating {num_suggestions} outfit suggestions for user {user_id}")
 
-    # Step 1: Get user's wardrobe items
+    # Step 1: Get user's wardrobe items (active only — archived items must
+    # never surface in recommendations)
     query = select(WardrobeItem).where(
         and_(
             WardrobeItem.user_id == user_id,
             WardrobeItem.processing_status == "completed",
+            WardrobeItem.status == "active",
         )
     )
     result = await db.execute(query)

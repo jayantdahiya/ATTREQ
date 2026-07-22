@@ -23,6 +23,12 @@ enum AttreqIcon: String, CaseIterable {
     case heart = "heart"
     case menu = "line.3.horizontal"
     case x = "xmark"
+    /// Stats tab (RI-7).
+    case chart = "chart.bar"
+    /// Archive action (RI-7 wardrobe item detail).
+    case archive = "archivebox"
+    /// Add-photo tile (RI-7 wardrobe item gallery / onboarding capture tray).
+    case plus = "plus"
 
     /// Approximates the per-icon stroke width from the handoff SVGs.
     private var symbolWeight: Font.Weight {

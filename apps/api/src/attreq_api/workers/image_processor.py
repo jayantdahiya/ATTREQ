@@ -1,18 +1,18 @@
 """Image processing worker for wardrobe items."""
 
-import asyncio
 import logging
-import tempfile
-from pathlib import Path
 from uuid import UUID
 
 from attreq_api.config.database import AsyncSessionLocal
 from attreq_api.crud.wardrobe import wardrobe_crud
-from attreq_api.services.ai.background_removal import background_removal_service
+from attreq_api.crud.wardrobe_photo import wardrobe_photo_crud
+from attreq_api.services.ai.background_removal import (
+    cleanup_classification_tempdir,
+    generate_processed_and_thumbnail,
+)
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
 from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.storage import get_storage
-from attreq_api.services.storage.base import get_file_extension
+from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,12 @@ async def process_wardrobe_image(
 
     This function orchestrates the complete AI processing pipeline:
     1. Update status to "processing"
-    2. Fetch original image bytes from storage into a temp workspace
-    3. Remove background from image
-    4. Generate thumbnail
-    5. Detect clothing attributes with the configured LLM classifier
-    6. Add to Weaviate for vector search
-    7. Update database with results
-    8. Set status to "completed" or "failed"
+    2. Remove background + generate thumbnail (shared, storage-agnostic helper)
+    3. Detect clothing attributes with the configured LLM classifier
+    4. Add to Weaviate for vector search
+    5. Update database with results
+    6. Invalidate the wardrobe-stats cache
+    7. Set status to "completed" or "failed"
 
     Args:
         item_id: UUID of the wardrobe item
@@ -42,56 +41,26 @@ async def process_wardrobe_image(
     """
     logger.info(f"Starting image processing for item {item_id}")
 
-    storage = get_storage()
-
     async with AsyncSessionLocal() as db:
         try:
             # Step 1: Update status to "processing"
             await wardrobe_crud.update_processing_status(db, item_id, "processing")
             logger.info(f"Item {item_id} status updated to processing")
 
-            # Step 2: Fetch original bytes into a temp workspace
-            # (rembg and the classifier are path-based)
-            original_bytes = await storage.get_file_bytes(original_image_ref)
-            extension = get_file_extension(original_image_ref)
+            # Step 2: Remove background + generate thumbnail (shared helper).
+            # `classification_path` lives in a temp dir we own and must clean
+            # up ourselves once classification is done.
+            classification_path, processed_image_url, thumbnail_url = (
+                await generate_processed_and_thumbnail(
+                    original_image_ref, user_id, log_ref=f"item {item_id}"
+                )
+            )
+            # Background removal failed -> fall back to the already-stored
+            # original URL/key, never a freshly (and, for S3, presigned) one.
+            processed_image_url = processed_image_url or original_image_url
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                original_tmp = str(Path(tmpdir) / f"original.{extension}")
-                await asyncio.to_thread(Path(original_tmp).write_bytes, original_bytes)
-
-                # Step 3: Remove background (rembg outputs PNG with alpha)
-                try:
-                    processed_tmp = str(Path(tmpdir) / "processed.png")
-                    await asyncio.to_thread(
-                        background_removal_service.remove_background,
-                        original_tmp,
-                        processed_tmp,
-                    )
-                    processed_bytes = await asyncio.to_thread(Path(processed_tmp).read_bytes)
-                    _, processed_image_url = await storage.save_image_from_bytes(
-                        processed_bytes, user_id, "processed", "png"
-                    )
-                    logger.info(f"Background removed for item {item_id}")
-                    classification_path = processed_tmp
-                    thumbnail_source, thumbnail_ext = processed_bytes, "png"
-
-                except Exception as e:
-                    logger.warning(f"Background removal failed for item {item_id}: {str(e)}")
-                    processed_image_url = original_image_url
-                    classification_path = original_tmp
-                    thumbnail_source, thumbnail_ext = original_bytes, extension
-
-                # Step 4: Generate thumbnail
-                try:
-                    _, thumbnail_url = await storage.generate_thumbnail(
-                        thumbnail_source, user_id, 300, thumbnail_ext
-                    )
-                    logger.info(f"Thumbnail generated for item {item_id}")
-                except Exception as e:
-                    logger.warning(f"Thumbnail generation failed for item {item_id}: {str(e)}")
-                    thumbnail_url = None
-
-                # Step 5: Detect clothing attributes
+            try:
+                # Step 3: Detect clothing attributes
                 try:
                     detection_result = await clothing_detection_service.detect_clothing(
                         classification_path
@@ -111,8 +80,10 @@ async def process_wardrobe_image(
                         "detection_confidence": 0.0,
                         "processing_status": "failed",
                     }
+            finally:
+                cleanup_classification_tempdir(classification_path)
 
-            # Step 6: Add to Weaviate
+            # Step 4: Add to Weaviate
             try:
                 if weaviate_service.is_connected():
                     weaviate_service.init_schema()
@@ -149,6 +120,11 @@ async def process_wardrobe_image(
             await wardrobe_crud.update(db, item_id, update_data)
             logger.info(f"Item {item_id} processing completed successfully")
 
+            try:
+                await invalidate_wardrobe_stats_cache(user_id)
+            except Exception as e:
+                logger.warning(f"Failed to invalidate stats cache for user {user_id}: {str(e)}")
+
         except Exception as e:
             logger.error(f"Image processing failed for item {item_id}: {str(e)}")
             try:
@@ -157,3 +133,53 @@ async def process_wardrobe_image(
                 logger.error(
                     f"Failed to update status to 'failed' for item {item_id}: {str(update_error)}"
                 )
+
+
+async def process_wardrobe_item_photo(
+    photo_id: UUID, user_id: UUID, original_image_path: str
+) -> None:
+    """Process an additional photo attached to an existing wardrobe item.
+
+    Reuses the shared bg-removal + thumbnail pipeline only — no
+    re-classification and no Weaviate indexing, since the item's
+    classification is already established. The item still counts once in
+    stats regardless of how many photos it has, so no stats-cache
+    invalidation happens here.
+
+    Args:
+        photo_id: UUID of the wardrobe_item_photos row
+        user_id: UUID of the user who owns the item
+        original_image_path: Storage reference of the original uploaded
+            photo (local path or S3 object key)
+    """
+    logger.info(f"Starting photo processing for photo {photo_id}")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            classification_path, processed_image_url, thumbnail_url = (
+                await generate_processed_and_thumbnail(
+                    original_image_path, user_id, log_ref=f"photo {photo_id}"
+                )
+            )
+            cleanup_classification_tempdir(classification_path)
+
+            if processed_image_url is None:
+                # Background removal failed — fall back to the photo's
+                # already-persisted original URL rather than minting a new
+                # one (would be a presigned URL under the S3 backend).
+                existing_photo = await wardrobe_photo_crud.get_by_id(db, photo_id)
+                processed_image_url = (
+                    existing_photo.original_image_url if existing_photo else None
+                )
+
+            await wardrobe_photo_crud.update(
+                db,
+                photo_id,
+                {
+                    "processed_image_url": processed_image_url,
+                    "thumbnail_url": thumbnail_url,
+                },
+            )
+            logger.info(f"Photo {photo_id} processing completed successfully")
+        except Exception as e:
+            logger.error(f"Photo processing failed for photo {photo_id}: {str(e)}")
