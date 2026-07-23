@@ -65,10 +65,20 @@ def test_module_has_no_top_level_torch_or_transformers_import():
     assert "transformers" not in top_level_imports
 
 
-def test_is_available_false_and_load_failed_cached_when_model_cannot_load():
-    """In this sandbox torch/transformers are genuinely not installed, so
-    `_ensure_loaded` fails for real — `is_available()` returns False and
-    stays False (cached `_load_failed`) without retrying every call."""
+def _force_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make `import torch` inside `_ensure_loaded` raise, regardless of whether
+    torch is actually installed in this environment. `sys.modules[name] = None`
+    causes a fresh `import name` to raise ImportError. Keeps the load-failure
+    soft-fail tests deterministic in CI (which installs torch) and locally."""
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setitem(sys.modules, "transformers", None)
+
+
+def test_is_available_false_and_load_failed_cached_when_model_cannot_load(monkeypatch):
+    """Forces a model-load failure (torch import raises) so `is_available()`
+    returns False and stays False (cached `_load_failed`) without retrying
+    every call — deterministic whether or not torch is installed."""
+    _force_load_failure(monkeypatch)
     service = FashionEmbeddingsService()
 
     assert service.is_available() is False
@@ -87,9 +97,10 @@ def test_embed_image_missing_file_returns_none_without_loading():
     assert service._model is None
 
 
-def test_embed_image_returns_none_when_model_load_fails(tmp_path):
+def test_embed_image_returns_none_when_model_load_fails(tmp_path, monkeypatch):
     from PIL import Image
 
+    _force_load_failure(monkeypatch)
     image_path = tmp_path / "item.png"
     Image.new("RGB", (16, 16), color=(10, 20, 30)).save(image_path)
 
@@ -103,7 +114,8 @@ def test_embed_texts_empty_list_returns_empty_without_loading():
     assert service._model is None
 
 
-def test_embed_texts_returns_none_when_model_load_fails():
+def test_embed_texts_returns_none_when_model_load_fails(monkeypatch):
+    _force_load_failure(monkeypatch)
     service = FashionEmbeddingsService()
     assert service.embed_texts(["a photo of a shirt"]) is None
 
