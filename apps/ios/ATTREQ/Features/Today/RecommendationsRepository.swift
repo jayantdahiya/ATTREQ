@@ -77,16 +77,43 @@ final class RecommendationsRepository: Sendable {
     ///   - occasion: occasion type (`casual`, `formal`, `party`, `business`,
     ///     `athletic`). RN always sends `"casual"`; the backend defaults to
     ///     `"casual"` when omitted, so `nil` sends nothing.
-    func daily(refresh: Bool = false, occasion: String? = nil) async throws -> DailySuggestionsResponse {
+    ///   - occasionHint: RI-5 morning-vibe hint (`sharp`/`relaxed`/`bold`) —
+    ///     omitted (not `""`) when the user hasn't answered/skipped the
+    ///     prompt yet, matching the backend's "unknown/absent -> no-op" contract.
+    func daily(refresh: Bool = false, occasion: String? = nil, occasionHint: String? = nil) async throws -> DailySuggestionsResponse {
         var query: [URLQueryItem] = []
         if let occasion {
             query.append(URLQueryItem(name: "occasion", value: occasion))
+        }
+        if let occasionHint {
+            query.append(URLQueryItem(name: "occasion_hint", value: occasionHint))
         }
         if refresh {
             query.append(URLQueryItem(name: "force_refresh", value: "true"))
         }
         return try await apiClient.request(
             Endpoint(method: .get, path: "recommendations/daily", query: query)
+        )
+    }
+
+    /// `GET /recommendations/swipe-deck` (RI-5) — a fresh, uncached deck of
+    /// outfits to rate. Never itself rate-limited; only ratings (via
+    /// `submitFeedback` below) are capped server-side.
+    func swipeDeck(occasion: String? = nil) async throws -> DailySuggestionsResponse {
+        var query: [URLQueryItem] = []
+        if let occasion {
+            query.append(URLQueryItem(name: "occasion", value: occasion))
+        }
+        return try await apiClient.request(
+            Endpoint(method: .get, path: "recommendations/swipe-deck", query: query)
+        )
+    }
+
+    /// `GET /recommendations/swipe-deck/status` (RI-5) — today's rating
+    /// count + cap, so the entry point can hide itself once exhausted.
+    func swipeDeckStatus() async throws -> SwipeDeckStatus {
+        try await apiClient.request(
+            Endpoint(method: .get, path: "recommendations/swipe-deck/status")
         )
     }
 

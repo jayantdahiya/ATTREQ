@@ -571,6 +571,9 @@ async def generate_daily_outfits(
     num_suggestions: int = 3,
     now: datetime | None = None,
     pool_size: int | None = None,
+    weights: dict[str, float] | None = None,
+    occasion_hint: str | None = None,
+    recently_worn_days: int = 14,
 ) -> list[dict[str, Any]]:
     """Generate daily outfit suggestions using all recommendation functions.
 
@@ -602,12 +605,37 @@ async def generate_daily_outfits(
             reranks the larger pool, then slices to the display count).
             Defaults to `num_suggestions` when omitted, so existing callers
             are unaffected.
+        weights: RI-5 (Task 5.2) — the aggregation weight set to apply. When
+            omitted, this function self-fetches the currently active weights
+            via `weight_fitting.get_active_weights` (still a pure O(1) read,
+            never a fit) — real request-path callers (the `/daily` endpoint)
+            fetch once themselves so they can also log the `source_label`
+            into the `shown` events' `context`, and pass the result here to
+            avoid a redundant second read.
+        occasion_hint: RI-5 (Task 5.4a) — optional morning-vibe hint
+            (`sharp`/`relaxed`/`bold`/`None`), mapped to a soft formality bias
+            via `services.recommendation.vibe.formality_bias_for_hint`.
+            Absent (`None`, the default) reproduces byte-identical pre-RI-5
+            behavior.
+        recently_worn_days: RI-5 (Task 5.3) — the swipe deck relaxes the
+            14-day anti-repetition window (it's a rating exercise, not
+            "wear this today"); defaults to the pre-RI-5 14-day window for
+            every other caller.
 
     Returns:
         List of outfit suggestions with scores and metadata
     """
     effective_k = pool_size if pool_size is not None else num_suggestions
     logger.info(f"Generating {effective_k} outfit suggestions for user {user_id}")
+
+    if weights is None:
+        from attreq_api.services.recommendation.weight_fitting import get_active_weights
+
+        weights, _source_label = await get_active_weights(db, user_id)
+
+    from attreq_api.services.recommendation.vibe import formality_bias_for_hint
+
+    formality_bias = formality_bias_for_hint(occasion_hint)
 
     # Step 1: Get user's wardrobe items (active only — archived items must
     # never surface in recommendations)
@@ -638,8 +666,10 @@ async def generate_daily_outfits(
         # Fall back to weather-filtered items if occasion filtering is too restrictive
         occasion_filtered = weather_filtered
 
-    # Step 4: Get recently worn items (14-day hard exclusion, unchanged)
-    recently_worn = await get_recently_worn_items(db, user_id, days=14)
+    # Step 4: Get recently worn items (14-day hard exclusion by default; the
+    # RI-5 swipe deck relaxes this via `recently_worn_days` — it's a rating
+    # exercise, not "wear this today").
+    recently_worn = await get_recently_worn_items(db, user_id, days=recently_worn_days)
 
     # Step 5: Get user preferences
     user_preferences = await get_user_preference_weights(db, user_id)
@@ -694,6 +724,8 @@ async def generate_daily_outfits(
         item_vectors=item_vectors,
         user_centroid=user_centroid,
         propagation_penalties=propagation_penalties,
+        weights=weights,
+        formality_bias=formality_bias,
     )
 
     suggestions = [_candidate_to_payload(c) for c in candidates]

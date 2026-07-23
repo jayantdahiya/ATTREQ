@@ -32,6 +32,11 @@ struct TodayScreen: View {
     /// refetches and the new entry appears without a manual pull-to-refresh).
     var onOutfitRecorded: (@MainActor () -> Void)? = nil
 
+    /// RI-5 (Task 5.3): created lazily when the "Rate a few looks" entry is
+    /// tapped, torn down on close (a fresh deck each time it's opened).
+    @State private var swipeDeckViewModel: SwipeDeckViewModel?
+    @State private var isPresentingSwipeDeck = false
+
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
@@ -49,11 +54,27 @@ struct TodayScreen: View {
             }
         }
         .task { await viewModel.load() }
+        .task { await viewModel.loadSwipeDeckStatus() }
         .sheet(isPresented: rejectionSheetBinding) {
             RejectionReasonSheet { reason, note in
                 recordThenNotify { await viewModel.confirmRejection(reason: reason, note: note) }
             }
         }
+        .sheet(isPresented: $isPresentingSwipeDeck, onDismiss: {
+            swipeDeckViewModel = nil
+            Task { await viewModel.loadSwipeDeckStatus() }
+        }) {
+            if let swipeDeckViewModel {
+                SwipeDeckView(viewModel: swipeDeckViewModel) {
+                    isPresentingSwipeDeck = false
+                }
+            }
+        }
+    }
+
+    private func presentSwipeDeck() {
+        swipeDeckViewModel = viewModel.makeSwipeDeckViewModel()
+        isPresentingSwipeDeck = true
     }
 
     /// Two-way bridge onto the view model's `isPresentingRejectionSheet` —
@@ -75,6 +96,10 @@ struct TodayScreen: View {
                     .padding(.bottom, 16)
                 WeatherStrip(city: city, weather: viewModel.weather)
                     .padding(.bottom, 18)
+                if !viewModel.hasAnsweredVibeToday {
+                    vibePromptBlock
+                        .padding(.bottom, 18)
+                }
                 content()
             }
             .padding(.horizontal, 24)
@@ -83,6 +108,46 @@ struct TodayScreen: View {
             .padding(.bottom, 110)
         }
         .refreshable { await viewModel.refresh() }
+    }
+
+    // MARK: - Morning vibe prompt (RI-5, Task 5.4)
+
+    /// One-tap "Today's vibe: Sharp / Relaxed / Bold" chip row, shown once
+    /// per day until answered or skipped. A soft formality nudge on
+    /// generation — never blocks it (suggestions load regardless).
+    private var vibePromptBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MonoLabel("Today's vibe?", size: 10)
+            HStack(spacing: 8) {
+                vibeChip("Sharp", hint: "sharp")
+                vibeChip("Relaxed", hint: "relaxed")
+                vibeChip("Bold", hint: "bold")
+                Spacer(minLength: 0)
+                Button("Skip") { viewModel.skipVibe() }
+                    .font(.attreqMono(10))
+                    .foregroundStyle(Theme.t3)
+                    .accessibilityIdentifier("vibe-skip")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .attreqCard(padding: 14)
+    }
+
+    private func vibeChip(_ title: String, hint: String) -> some View {
+        Button {
+            Task { await viewModel.selectVibe(hint) }
+        } label: {
+            Text(title.uppercased())
+                .font(.attreqMono(10))
+                .tracking(0.8)
+                .foregroundStyle(Theme.text)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 12)
+                .background(Theme.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("vibe-chip-\(hint)")
     }
 
     // MARK: - Header
@@ -150,6 +215,35 @@ struct TodayScreen: View {
 
         hintCard
             .padding(.top, 11)
+
+        if viewModel.showsSwipeDeckEntry {
+            swipeDeckEntryCard
+                .padding(.top, 11)
+        }
+    }
+
+    /// RI-5 (Task 5.3) entry point — hidden once today's rating cap is
+    /// reached (`showsSwipeDeckEntry`), never itself rate-limited to open.
+    private var swipeDeckEntryCard: some View {
+        Button(action: presentSwipeDeck) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    MonoLabel("A minute to spare?", size: 10)
+                    Text("Rate a few looks")
+                        .font(.attreqBody(14, weight: .medium))
+                        .foregroundStyle(Theme.text)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.t3)
+            }
+            .padding(.vertical, 13)
+            .padding(.horizontal, 15)
+        }
+        .buttonStyle(.plain)
+        .attreqCard(padding: 0)
+        .accessibilityIdentifier("swipe-deck-entry")
     }
 
     /// Runs a wear/feedback action; when it succeeds (an outfit row was

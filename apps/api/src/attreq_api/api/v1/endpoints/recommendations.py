@@ -15,7 +15,7 @@ from attreq_api.crud.recommendation_event import recommendation_event_crud
 from attreq_api.crud.user_event import user_event_crud
 from attreq_api.integrations.external.weather_api import weather_service
 from attreq_api.models.user import User
-from attreq_api.schemas.recommendation import DailySuggestionsResponse
+from attreq_api.schemas.recommendation import DailySuggestionsResponse, SwipeDeckStatusResponse
 from attreq_api.schemas.telemetry import (
     RecommendationFeedbackAction,
     RecommendationFeedbackRequest,
@@ -25,12 +25,28 @@ from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
 from attreq_api.services.cache.redis_client import redis_cache
 from attreq_api.services.recommendation.algorithm import generate_daily_outfits
 from attreq_api.services.recommendation.reranker import rerank
+from attreq_api.services.recommendation.vibe import VALID_OCCASION_HINTS
+from attreq_api.services.recommendation.weight_fitting import get_active_weights
 
 # RI-6: reranker pool — how many diverse candidates to generate/rerank before
 # slicing down to the display count, when RERANKER_ENABLED. See finalized
 # plan §9: "the reranker needs a top-5" (generate_daily_outfits's diversity
 # dedup otherwise never produces more than the display count on its own).
 RERANKER_POOL_SIZE = 5
+
+# RI-5 (Task 5.3): swipe deck. Adaptation note: `composition.select_anchors`
+# hard-caps anchor selection at `MAX_ANCHORS == 5` regardless of the
+# requested `k` (a pre-existing RI-4 constant, not an RI-5 choice) — so
+# "sample 5 from a top-15 pool" isn't literally achievable without deeper
+# restructuring of the anchor-selection architecture. The deck instead takes
+# every anchor-diverse candidate the pipeline produces (already maximally
+# diverse by construction, since `select_anchors` never picks two anchors of
+# the same (category, color-family)) — `SWIPE_DECK_SIZE` names the display
+# count. The relaxed anti-repetition window (a rating exercise, not "wear
+# this today") is the real diversity lever here.
+SWIPE_DECK_SIZE = 5
+SWIPE_DECK_RECENTLY_WORN_DAYS = 3
+SWIPE_DECK_DAILY_CAP = 5
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,6 +57,14 @@ async def get_daily_suggestions(
     lat: float | None = Query(None, description="Latitude for weather lookup", ge=-90, le=90),
     lon: float | None = Query(None, description="Longitude for weather lookup", ge=-180, le=180),
     occasion: str = Query("casual", description="Occasion type (casual, formal, party, etc.)"),
+    occasion_hint: str | None = Query(
+        None,
+        description=(
+            "RI-5: optional one-tap morning vibe hint (sharp|relaxed|bold) — a soft "
+            "formality nudge, not a hard filter. Unknown values are ignored (no-op), "
+            "never 4xx, since the vibe prompt is always skippable."
+        ),
+    ),
     force_refresh: bool = Query(False, description="Force regeneration, bypass cache"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -72,12 +96,25 @@ async def get_daily_suggestions(
         HTTPException: If user has insufficient wardrobe items or no location available
     """
     today = date.today().isoformat()
+    # RI-5 (finalized plan Correction 10): normalize the hint up front so an
+    # unknown/garbage value behaves exactly like "no hint" everywhere below
+    # (cache key, generation, vibe_answered recording) rather than silently
+    # fragmenting the cache namespace with junk hint strings.
+    normalized_hint = occasion_hint.lower().strip() if occasion_hint else None
+    if normalized_hint not in VALID_OCCASION_HINTS:
+        normalized_hint = None
+
     # v2 (RI-4): the cached payload shape changed (fullbody/footwear/outerwear
     # slots, explanation/confidence/rediscovery) — bumping the key namespace
     # retires every pre-deploy cache entry instead of 500ing on
     # `DailySuggestionsResponse(**cached)` for up to 24h per user. Must match
     # `services/cache/invalidation.py::invalidate_daily_suggestions`.
-    cache_key = f"daily_suggestions:v2:{current_user.id}:{today}:{occasion}"
+    # RI-5 (Correction 10): `occasion_hint` is now part of the cache key too —
+    # without this, a hinted request could serve a stale un-hinted cached
+    # result (or vice versa) for up to 24h.
+    cache_key = (
+        f"daily_suggestions:v2:{current_user.id}:{today}:{occasion}:{normalized_hint or 'none'}"
+    )
 
     # Step 1: Check cache (unless force refresh)
     if not force_refresh:
@@ -119,6 +156,12 @@ async def get_daily_suggestions(
             detail="Weather service temporarily unavailable",
         ) from e
 
+    # Step 3b (RI-5): read the active scoring weights ONCE per generation —
+    # an O(1) indexed read, never a fit (see weight_fitting.get_active_weights
+    # docstring). `source_label` is logged into the shown-batch context below
+    # for observability (which weight set served this recommendation).
+    active_weights, weight_source = await get_active_weights(db, current_user.id)
+
     # Step 4: Generate outfit suggestions. RI-6: when the LLM reranker is on,
     # generate a larger diverse pool (RERANKER_POOL_SIZE) so there is
     # something to rerank, then slice back down to the display count below —
@@ -133,6 +176,8 @@ async def get_daily_suggestions(
             occasion=occasion,
             num_suggestions=display_count,
             pool_size=RERANKER_POOL_SIZE if settings.reranker_enabled else None,
+            weights=active_weights,
+            occasion_hint=normalized_hint,
         )
     except Exception as e:
         logger.error(f"Failed to generate outfit suggestions: {str(e)}")
@@ -187,8 +232,41 @@ async def get_daily_suggestions(
         user_id=current_user.id,
         recommendation_id=recommendation_id,
         candidates=suggestions,
-        context={"weather": weather_data, "occasion": occasion, "date": today},
+        context={
+            "weather": weather_data,
+            "occasion": occasion,
+            "date": today,
+            # RI-5: which weight set served this batch ("user:<id>" |
+            # "global" | "fallback") and the morning-vibe hint, if any —
+            # observability for the fit script / eval gate.
+            "weight_source": weight_source,
+            "occasion_hint": normalized_hint,
+        },
     )
+
+    # RI-5 (Task 5.4b): record the day's vibe answer as a `user_events` row —
+    # a labeled preference event, "remembered per day" by checking for an
+    # existing `vibe_answered` event today first. Best-effort, never blocks
+    # the response; only recorded on a genuine fresh generation (a cache hit
+    # returns before this point).
+    if normalized_hint is not None:
+        try:
+            todays_vibe_events = await user_event_crud.list_for_user(
+                db,
+                user_id=current_user.id,
+                since=datetime.combine(date.today(), datetime.min.time()),
+                event_types=["vibe_answered"],
+                limit=1,
+            )
+            if not todays_vibe_events:
+                await user_event_crud.create(
+                    db,
+                    user_id=current_user.id,
+                    event_type="vibe_answered",
+                    payload={"vibe": normalized_hint, "date": today},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to record vibe_answered event: {e}")
 
     # Step 5: Build response. recommendation_id must be `str`, never a raw UUID:
     # redis_cache.set does json.dumps, which raises on a UUID and silently returns
@@ -216,6 +294,127 @@ async def get_daily_suggestions(
     )
 
     return DailySuggestionsResponse(**response_data)
+
+
+@router.get("/swipe-deck", response_model=DailySuggestionsResponse)
+async def get_swipe_deck(
+    lat: float | None = Query(None, description="Latitude for weather lookup", ge=-90, le=90),
+    lon: float | None = Query(None, description="Longitude for weather lookup", ge=-180, le=180),
+    occasion: str = Query("casual", description="Occasion type (casual, formal, party, etc.)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """RI-5 (Task 5.3): a daily, optional deck of outfits to rate 👍/👎.
+
+    Never cached (each call is a fresh browsing impression) and never itself
+    rate-limited (browsing is free) — only the ratings, submitted through the
+    existing `POST /{recommendation_id}/feedback` endpoint, are capped at
+    `SWIPE_DECK_DAILY_CAP`/day (enforced there). Relaxes the 14-day
+    recently-worn exclusion to `SWIPE_DECK_RECENTLY_WORN_DAYS` — a rating
+    exercise, not "wear this today".
+    """
+    weather_lat = lat
+    weather_lon = lon
+    if weather_lat is None or weather_lon is None:
+        if current_user.saved_latitude is None or current_user.saved_longitude is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No location available. Please provide coordinates or set your location in profile.",
+            )
+        weather_lat = current_user.saved_latitude
+        weather_lon = current_user.saved_longitude
+
+    try:
+        weather_data = await weather_service.get_current_weather(weather_lat, weather_lon)
+    except Exception as e:
+        logger.error(f"Failed to fetch weather for swipe deck: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Weather service temporarily unavailable",
+        ) from e
+
+    active_weights, weight_source = await get_active_weights(db, current_user.id)
+
+    try:
+        suggestions = await generate_daily_outfits(
+            db=db,
+            user_id=current_user.id,
+            weather=weather_data,
+            occasion=occasion,
+            num_suggestions=SWIPE_DECK_SIZE,
+            weights=active_weights,
+            recently_worn_days=SWIPE_DECK_RECENTLY_WORN_DAYS,
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate swipe deck: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate swipe deck",
+        ) from e
+
+    if not suggestions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Insufficient wardrobe items to generate a swipe deck.",
+        )
+
+    recommendation_id = uuid.uuid4()
+    for index, suggestion in enumerate(suggestions):
+        suggestion["outfit_index"] = index
+
+    today = date.today().isoformat()
+    await recommendation_event_crud.bulk_create_shown(
+        db,
+        user_id=current_user.id,
+        recommendation_id=recommendation_id,
+        candidates=suggestions,
+        context={
+            "weather": weather_data,
+            "occasion": occasion,
+            "date": today,
+            "weight_source": weight_source,
+            "source": "swipe_deck",
+        },
+    )
+
+    response_data = {
+        "recommendation_id": str(recommendation_id),
+        "suggestions": suggestions,
+        "total_suggestions": len(suggestions),
+        "generated_at": datetime.utcnow().isoformat(),
+        "weather": weather_data,
+        "occasion": occasion,
+        "cached": False,
+    }
+
+    logger.info(f"Generated swipe deck of {len(suggestions)} outfits for user {current_user.id}")
+
+    return DailySuggestionsResponse(**response_data)
+
+
+async def _count_swipe_ratings_today(db: AsyncSession, user_id: UUID) -> int:
+    """Count today's `swipe_rated` user_events — the source of truth for both
+    the display-only status endpoint and the feedback endpoint's 429 gate."""
+    events = await user_event_crud.list_for_user(
+        db,
+        user_id=user_id,
+        since=datetime.combine(date.today(), datetime.min.time()),
+        event_types=["swipe_rated"],
+        limit=100,
+    )
+    return len(events)
+
+
+@router.get("/swipe-deck/status", response_model=SwipeDeckStatusResponse)
+async def get_swipe_deck_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """How many swipe-deck ratings the user has submitted today, and the daily
+    cap — lets the client show/hide the entry point without inferring state
+    from a 429 on the feedback endpoint."""
+    ratings_today = await _count_swipe_ratings_today(db, current_user.id)
+    return SwipeDeckStatusResponse(ratings_today=ratings_today, cap=SWIPE_DECK_DAILY_CAP)
 
 
 @router.delete("/cache", status_code=status.HTTP_204_NO_CONTENT)
@@ -279,6 +478,24 @@ async def submit_recommendation_feedback(
             detail="No matching shown recommendation found for this user",
         )
 
+    # RI-5 (Task 5.3): a rating on a swipe-deck-sourced `shown` row counts
+    # against the daily cap. Only accepted/rejected are "ratings" (swapped
+    # doesn't apply to a rating deck, but is not itself blocked here — the
+    # client simply never offers it on deck candidates).
+    is_swipe_deck_rating = bool(
+        shown_event.context
+        and shown_event.context.get("source") == "swipe_deck"
+        and feedback.action
+        in (RecommendationFeedbackAction.ACCEPTED, RecommendationFeedbackAction.REJECTED)
+    )
+    if is_swipe_deck_rating:
+        ratings_today = await _count_swipe_ratings_today(db, current_user.id)
+        if ratings_today >= SWIPE_DECK_DAILY_CAP:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Daily swipe-deck rating cap ({SWIPE_DECK_DAILY_CAP}) reached",
+            )
+
     # rejection_reason/rejection_note are only meaningful for REJECTED; the request
     # schema is forgiving (doesn't 4xx) if they're sent otherwise, but we don't
     # persist them unless the action is actually a rejection.
@@ -319,6 +536,27 @@ async def submit_recommendation_feedback(
         )
     except Exception as e:
         logger.warning(f"Failed to write user_event for recommendation feedback: {e}")
+
+    # RI-5 (Task 5.3): a swipe-deck rating is ALSO its own labeled event —
+    # `extract_preference_pairs` reads the underlying accepted/rejected rows
+    # (unchanged shape, source distinguished via `context.source`), this is
+    # purely the daily-cap counter's source of truth. Equal weight for
+    # negative signal: no upweighting path exists for accepted vs rejected —
+    # both simply increment the same counter.
+    if is_swipe_deck_rating:
+        try:
+            await user_event_crud.create(
+                db,
+                user_id=current_user.id,
+                event_type="swipe_rated",
+                payload={
+                    "recommendation_id": str(recommendation_id),
+                    "outfit_index": feedback.outfit_index,
+                    "action": feedback.action.value,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to write swipe_rated event: {e}")
 
     # RI-6 (finalized plan §4, exit-criterion enabler): a "dislike_item"
     # rejection is the primary signal `feedback_source.get_recent_dislikes`

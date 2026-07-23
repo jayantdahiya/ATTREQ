@@ -26,7 +26,9 @@ def _item(**overrides):
     return build_wardrobe_item(user_id=USER_ID, **overrides)
 
 
-def _fullbody_candidate(dress, *, item_vectors=None, user_centroid=None, propagation_penalties=None):
+def _fullbody_candidate(
+    dress, *, item_vectors=None, user_centroid=None, propagation_penalties=None, weights=None
+):
     pools = comp.WardrobePools(fullbody=[dress])
     slot_plan = comp.SlotPlan(need_footwear=False, need_outerwear=False, fullbody_eligible=True)
     rotation_ctx = RotationContext(today=TODAY)
@@ -48,6 +50,7 @@ def _fullbody_candidate(dress, *, item_vectors=None, user_centroid=None, propaga
         item_vectors=item_vectors,
         user_centroid=user_centroid,
         propagation_penalties=propagation_penalties,
+        weights=weights,
     )
 
 
@@ -85,23 +88,65 @@ def test_centroid_component_reflects_item_vector_similarity_to_centroid():
 
 
 def test_centroid_weight_carve_out_changes_base_compatibility_without_style_dna():
-    """No style_dna: pre-RI-6 base = 0.5*color + 0.5*context. With centroid
-    active, base = 0.45*color + 0.45*context + 0.10*centroid — verify the
-    two differ whenever centroid != the pre-RI-6 implied midpoint."""
+    """RI-5 (Task 5.1) superseded the old hard style_dna/no-style_dna scheme
+    switch: with no quiz AND no observed behaviour, `style_dna_score` and
+    `behaviour_score` are both the neutral 0.5 default (see
+    `services/style_dna/blend.py`), but the FALLBACK_WEIGHTS terms for them
+    (0.40/0.20) still apply unconditionally — no cliff.
+
+    RI-5 also deliberately sets `FALLBACK_WEIGHTS["centroid"] = 0.0`
+    (`weight_fitting.py` docstring: "provisional pending RI-5's fitted
+    weights" — until a real fit assigns it a data-driven coefficient, the
+    conservative Phase-A default is to not weight it at all). So activating
+    centroid data with the DEFAULT weights changes `components['centroid']`
+    but NOT `base_compatibility` — verified below. Passing an explicit
+    weights dict WITH a nonzero centroid share (simulating a published fit)
+    DOES change it, proving the carve-out mechanism (`_apply_weights`) itself
+    still works end to end.
+    """
     dress = _item(category="dress", is_fullbody=True)
 
     inactive = _fullbody_candidate(dress)
-    active_high_centroid = _fullbody_candidate(
+    active_default_weights = _fullbody_candidate(
         dress, item_vectors={dress.id: [1.0, 0.0]}, user_centroid=[1.0, 0.0]
+    )
+    fitted_weights = {
+        "color_harmony": 0.20,
+        "formality": 0.20,
+        "style_dna": 0.30,
+        "behaviour": 0.20,
+        "centroid": 0.10,
+    }
+    active_fitted_weights = _fullbody_candidate(
+        dress,
+        item_vectors={dress.id: [1.0, 0.0]},
+        user_centroid=[1.0, 0.0],
+        weights=fitted_weights,
     )
 
     color = inactive.score_components["color_harmony"]
     context = inactive.score_components["formality"]
-    expected_inactive_base = round(color * 0.5 + context * 0.5, 4)
-    expected_active_base = round(color * 0.45 + context * 0.45 + 1.0 * 0.10, 4)
+    style_dna_score = inactive.score_components["style_dna"]
+    behaviour_score = inactive.score_components["behaviour"]
+    assert style_dna_score == 0.5
+    assert behaviour_score == 0.5
 
+    expected_inactive_base = round(
+        color * 0.20 + context * 0.20 + style_dna_score * 0.40 + behaviour_score * 0.20, 4
+    )
+    expected_active_fitted_base = round(
+        color * 0.20 + context * 0.20 + style_dna_score * 0.30 + behaviour_score * 0.20 + 1.0 * 0.10, 4
+    )
+
+    assert active_default_weights.score_components["centroid"] == 1.0
     assert inactive.score_components["base_compatibility"] == expected_inactive_base
-    assert active_high_centroid.score_components["base_compatibility"] == expected_active_base
+    # Default (unfitted) weights: centroid data is computed but not weighted.
+    assert (
+        active_default_weights.score_components["base_compatibility"]
+        == expected_inactive_base
+    )
+    # An explicit weights dict with a nonzero centroid share DOES change it.
+    assert active_fitted_weights.score_components["base_compatibility"] == expected_active_fitted_base
 
 
 def test_propagation_adjustment_folds_into_total_and_is_recorded():

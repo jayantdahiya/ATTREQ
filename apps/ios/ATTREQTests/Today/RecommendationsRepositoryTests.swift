@@ -212,4 +212,76 @@ struct RecommendationsRepositoryTests {
             _ = try await Self.makeRepository().daily()
         }
     }
+
+    // MARK: - RI-5: occasion_hint / swipe deck
+
+    @Test func dailySendsOccasionHintWhenProvided() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.capture(
+            status: 200,
+            body: dailyResponseJSON(suggestions: [suggestionJSON(top: "t-1", bottom: "b-1")])
+        )
+
+        _ = try await Self.makeRepository().daily(occasionHint: "sharp")
+
+        let request = try #require(captured.withLock { $0 })
+        let query = Self.queryItems(of: request.url)
+        #expect(query["occasion_hint"] == "sharp")
+    }
+
+    @Test func dailyOmitsOccasionHintWhenNilByDefault() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.capture(
+            status: 200,
+            body: dailyResponseJSON(suggestions: [suggestionJSON(top: "t-1", bottom: "b-1")])
+        )
+
+        _ = try await Self.makeRepository().daily()
+
+        let request = try #require(captured.withLock { $0 })
+        let query = Self.queryItems(of: request.url)
+        #expect(query["occasion_hint"] == nil)
+    }
+
+    @Test func swipeDeckSendsGETToSwipeDeckPathAndDecodesResponse() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.capture(
+            status: 200,
+            body: dailyResponseJSON(
+                suggestions: [suggestionJSON(top: "t-1", bottom: "b-1"), suggestionJSON(top: "t-2", bottom: "b-2", index: 1)],
+                recommendationId: "rec-swipe-1"
+            )
+        )
+
+        let response = try await Self.makeRepository().swipeDeck()
+
+        let request = try #require(captured.withLock { $0 })
+        #expect(request.method == "GET")
+        #expect(request.path == "/api/v1/recommendations/swipe-deck")
+        #expect(response.recommendationId == "rec-swipe-1")
+        #expect(response.suggestions.count == 2)
+    }
+
+    @Test func swipeDeckStatusDecodesRatingsAndCap() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.capture(status: 200, body: Data(#"{"ratings_today":3,"cap":5}"#.utf8))
+
+        let status = try await Self.makeRepository().swipeDeckStatus()
+
+        let request = try #require(captured.withLock { $0 })
+        #expect(request.method == "GET")
+        #expect(request.path == "/api/v1/recommendations/swipe-deck/status")
+        #expect(status.ratingsToday == 3)
+        #expect(status.cap == 5)
+        #expect(status.hasRatingsRemaining == true)
+    }
+
+    @Test func swipeDeckStatusHasNoRatingsRemainingAtCap() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.capture(status: 200, body: Data(#"{"ratings_today":5,"cap":5}"#.utf8))
+
+        let status = try await Self.makeRepository().swipeDeckStatus()
+
+        #expect(status.hasRatingsRemaining == false)
+    }
 }

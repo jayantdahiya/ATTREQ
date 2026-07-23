@@ -295,24 +295,49 @@ async def update_behaviour_weights(
     color_likes = weights.setdefault("color_likes", {})
     pattern_likes = weights.setdefault("pattern_likes", {})
 
+    # RI-5 (Task 5.1, Correction 6): per-KEY observation counts, not one
+    # profile-level `n`. Without this, a user with 50 shirt events but zero
+    # "navy" signal would have navy's behaviour value blended as if it had
+    # 50 observations, washing out a legitimate quiz color opinion — see
+    # `services/style_dna/blend.py`. Single choke point (this function is
+    # the only writer of `behaviour_weights`), so both existing callers
+    # (worn, feedback) get counts for free.
+    counts = style_dna.setdefault("behaviour_counts", {})
+    category_counts = counts.setdefault("category_counts", {})
+    color_counts = counts.setdefault("color_counts", {})
+    pattern_counts = counts.setdefault("pattern_counts", {})
+
     delta = 0.05 if signal in ("liked", "worn") else -0.05
 
+    touched = False
     for item in items:
         if item.category:
             cat = item.category.lower()
             category_likes[cat] = round(
                 max(0.0, min(1.0, category_likes.get(cat, 0.5) + delta)), 4
             )
+            category_counts[cat] = int(category_counts.get(cat, 0) or 0) + 1
+            touched = True
         if item.color_primary:
             col = item.color_primary.lower()
             color_likes[col] = round(
                 max(0.0, min(1.0, color_likes.get(col, 0.5) + delta)), 4
             )
+            color_counts[col] = int(color_counts.get(col, 0) or 0) + 1
+            touched = True
         if item.pattern:
             pat = item.pattern.lower()
             pattern_likes[pat] = round(
                 max(0.0, min(1.0, pattern_likes.get(pat, 0.5) + delta)), 4
             )
+            pattern_counts[pat] = int(pattern_counts.get(pat, 0) or 0) + 1
+            touched = True
+
+    # Profile-level feedback-event counter (self-healed from event counts by
+    # `fit_scoring_weights.py --dry-run` if it ever drifts) — used for
+    # observability, not the per-key blend itself.
+    if touched:
+        style_dna["n_feedback_events"] = int(style_dna.get("n_feedback_events", 0) or 0) + 1
 
     await db.execute(
         update(User)

@@ -119,13 +119,45 @@ def calculate_time_score(occasion: str, now: datetime | None = None) -> float:
     return 0.6
 
 
+def _formality_hint_alignment(items: list[WardrobeItem], formality_bias: float) -> float:
+    """RI-5 (Task 5.4a) — soft morning-vibe nudge, not a hard filter.
+
+    Maps `formality_bias` (from `services.recommendation.vibe
+    .VIBE_FORMALITY_BIAS`, roughly [-1, 1]) onto a shifted target formality
+    level (0-3 scale, neutral midpoint 1.5) and scores how well the items'
+    average formality level aligns with that shifted target — the same
+    "consistency" primitive `calculate_occasion_fit` already uses, just
+    re-centered. `formality_bias == 0.0` (no hint given) must be a no-op at
+    the call site (never invoked with a truthy bias), so this function is
+    only ever reached when a hint is actually present.
+    """
+    from attreq_api.services.recommendation.algorithm import _lookup_formality_level
+
+    if not items:
+        return 0.5
+
+    levels = [_lookup_formality_level(item.category, item.occasion) for item in items]
+    avg_level = sum(levels) / len(levels)
+    target = 1.5 + formality_bias * 1.5
+    return round(max(0.0, 1.0 - abs(avg_level - target) / 3.0), 4)
+
+
 def calculate_context_score(
     items: list[WardrobeItem],
     occasion: str,
     weather: dict[str, Any],
     now: datetime | None = None,
+    formality_bias: float = 0.0,
 ) -> tuple[float, dict[str, float]]:
     """`0.55*occasion_fit + 0.35*weather_score + 0.10*time_score`.
+
+    `formality_bias` (RI-5, Task 5.4a): when nonzero (a morning-vibe hint was
+    given — `sharp`/`relaxed`/`bold`), `occasion_fit` is re-blended 70/30
+    with a hint-shifted formality-alignment term (`_formality_hint_alignment`)
+    — a soft nudge toward higher/lower-formality picks, never a hard filter.
+    `formality_bias == 0.0` (the default; no hint) is byte-identical to
+    pre-RI-5 behavior — the blend is skipped entirely, not blended with a
+    zero-shift (which would still perturb rounding).
 
     Returns `(total, detail)` — `detail` is added to the outfit's `scores`
     dict for observability (RI-4/eval), not part of the `OutfitScores`
@@ -134,6 +166,10 @@ def calculate_context_score(
     occasion_fit = calculate_occasion_fit(items, occasion)
     weather_score = calculate_weather_score(items, weather)
     time_score = calculate_time_score(occasion, now)
+
+    if formality_bias:
+        alignment = _formality_hint_alignment(items, formality_bias)
+        occasion_fit = round(0.7 * occasion_fit + 0.3 * alignment, 4)
 
     total = round(
         OCCASION_WEIGHT * occasion_fit + WEATHER_WEIGHT * weather_score + TIME_WEIGHT * time_score,

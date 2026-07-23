@@ -201,7 +201,7 @@ async def test_daily_recommendations_accept_explicit_coordinates(monkeypatch, cl
     top_item = build_wardrobe_item(user_id=user.id)
     bottom_item = build_wardrobe_item(user_id=user.id, category="jeans", color_primary="black")
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None, weights=None, occasion_hint=None, recently_worn_days=14):
         return [
             {
                 "top_item_id": str(top_item.id),
@@ -297,7 +297,7 @@ async def test_daily_recommendations_round_trips_color_harmony_branch(monkeypatc
     top_item = build_wardrobe_item(user_id=user.id)
     bottom_item = build_wardrobe_item(user_id=user.id, category="jeans", color_primary="black")
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None, weights=None, occasion_hint=None, recently_worn_days=14):
         return [
             {
                 "top_item_id": str(top_item.id),
@@ -394,7 +394,7 @@ async def test_daily_recommendations_fallback_to_saved_coordinates(monkeypatch, 
     async def fake_cache_set(key, value, ttl):
         return None
 
-    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None):
+    async def fake_generate_daily_outfits(db, user_id, weather, occasion, num_suggestions, pool_size=None, weights=None, occasion_hint=None, recently_worn_days=14):
         return []
 
     monkeypatch.setattr(recommendations.weather_service, "get_current_weather", fake_get_weather)
@@ -989,8 +989,16 @@ async def test_generate_daily_outfits_query_filters_to_active_status():
     db = QueryCapturingDB()
     user_id = uuid.uuid4()
 
+    # RI-5: pass `weights=` explicitly so `generate_daily_outfits` skips its
+    # `get_active_weights` self-fetch (an unrelated extra query against this
+    # single-purpose fake DB) — this test is only about the wardrobe query's
+    # active-status filter, asserted via `db.queries[0]` below.
     result = await algorithm.generate_daily_outfits(
-        db, user_id, weather={"temp": 22, "condition": "Clear"}, occasion="casual"
+        db,
+        user_id,
+        weather={"temp": 22, "condition": "Clear"},
+        occasion="casual",
+        weights={"color_harmony": 0.5, "formality": 0.5},
     )
 
     assert result == []

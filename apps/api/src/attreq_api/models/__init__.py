@@ -2,6 +2,7 @@
 
 from attreq_api.models.outfit import Outfit
 from attreq_api.models.recommendation_event import RecommendationEvent
+from attreq_api.models.scoring_weights import ScoringWeights
 from attreq_api.models.style_dna import StyleDnaPhoto
 from attreq_api.models.user import User
 from attreq_api.models.user_event import UserEvent
@@ -16,4 +17,5 @@ __all__ = [
     "WardrobeItemPhoto",
     "RecommendationEvent",
     "UserEvent",
+    "ScoringWeights",
 ]

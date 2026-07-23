@@ -145,7 +145,8 @@ struct TodayViewModelTests {
         dailyStatus: Int = 200,
         dailyBody: Data? = nil,
         createStatus: Int = 201,
-        createBody: Data? = nil
+        createBody: Data? = nil,
+        swipeDeckStatusBody: Data? = nil
     ) -> LockedBox<[CapturedRequest]> {
         let captured = LockedBox<[CapturedRequest]>([])
         TodayMockURLProtocol.handler.withLock { handler in
@@ -154,6 +155,12 @@ struct TodayViewModelTests {
                     $0.append(CapturedRequest(method: request.httpMethod, url: request.url, path: request.url?.path(), body: body))
                 }
                 let path = request.url?.path() ?? ""
+                // RI-5: checked before the generic "recommendations/daily" and
+                // "/feedback" suffix checks below, since this path contains
+                // neither substring cleanly (avoids any ordering ambiguity).
+                if path.hasSuffix("swipe-deck/status") {
+                    return (200, swipeDeckStatusBody ?? Data(#"{"ratings_today":0,"cap":5}"#.utf8))
+                }
                 if path.hasSuffix("recommendations/daily") {
                     return (dailyStatus, dailyBody ?? dailyJSON())
                 }
@@ -584,6 +591,88 @@ struct TodayViewModelTests {
         // The default is the device's zone.
         #expect(TodayViewModel.todayWornDate(now: instant)
             == TodayViewModel.todayWornDate(now: instant, timeZone: .current))
+    }
+
+    // MARK: RI-5 — morning vibe prompt
+
+    private static let vibeAnsweredDefaultsKey = "com.attreq.vibeAnsweredDate"
+
+    /// Clears the shared `UserDefaults` flag before/after each vibe test —
+    /// `hasAnsweredVibeToday` reads real `UserDefaults.standard`, so a value
+    /// left over from a previous run/test would otherwise leak across tests.
+    private static func resetVibeDefaults() {
+        UserDefaults.standard.removeObject(forKey: vibeAnsweredDefaultsKey)
+    }
+
+    @Test func hasAnsweredVibeTodayIsFalseUntilAnsweredOrSkipped() async throws {
+        Self.resetVibeDefaults()
+        defer { Self.resetHandler(); Self.resetVibeDefaults() }
+        _ = Self.installRouter()
+        let (viewModel, _) = Self.makeModels()
+
+        #expect(viewModel.hasAnsweredVibeToday == false)
+        viewModel.skipVibe()
+        #expect(viewModel.hasAnsweredVibeToday == true)
+    }
+
+    @Test func selectVibeSendsOccasionHintOnNextDailyRequestAndMarksAnswered() async throws {
+        Self.resetVibeDefaults()
+        defer { Self.resetHandler(); Self.resetVibeDefaults() }
+        let captured = Self.installRouter()
+        let (viewModel, _) = Self.makeModels()
+
+        await viewModel.load()
+        await viewModel.selectVibe("sharp")
+
+        #expect(viewModel.hasAnsweredVibeToday == true)
+        let requests = captured.withLock { $0 }
+        #expect(requests.count == 2)
+        let secondQuery = Self.queryItems(of: requests[1].url)
+        #expect(secondQuery["occasion_hint"] == "sharp")
+    }
+
+    @Test func refreshAfterSelectVibeKeepsSendingTheAnsweredHint() async throws {
+        Self.resetVibeDefaults()
+        defer { Self.resetHandler(); Self.resetVibeDefaults() }
+        let captured = Self.installRouter()
+        let (viewModel, _) = Self.makeModels()
+
+        await viewModel.selectVibe("relaxed")
+        await viewModel.refresh()
+
+        let requests = captured.withLock { $0 }
+        let lastQuery = Self.queryItems(of: requests.last?.url)
+        #expect(lastQuery["occasion_hint"] == "relaxed")
+    }
+
+    // MARK: RI-5 — swipe deck entry point
+
+    @Test func showsSwipeDeckEntryDefaultsTrueBeforeStatusLoads() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.installRouter()
+        let (viewModel, _) = Self.makeModels()
+
+        #expect(viewModel.showsSwipeDeckEntry == true)
+    }
+
+    @Test func loadSwipeDeckStatusReflectsCapReached() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.installRouter(swipeDeckStatusBody: Data(#"{"ratings_today":5,"cap":5}"#.utf8))
+        let (viewModel, _) = Self.makeModels()
+
+        await viewModel.loadSwipeDeckStatus()
+
+        #expect(viewModel.showsSwipeDeckEntry == false)
+    }
+
+    @Test func loadSwipeDeckStatusReflectsRatingsRemaining() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.installRouter(swipeDeckStatusBody: Data(#"{"ratings_today":2,"cap":5}"#.utf8))
+        let (viewModel, _) = Self.makeModels()
+
+        await viewModel.loadSwipeDeckStatus()
+
+        #expect(viewModel.showsSwipeDeckEntry == true)
     }
 
     private static func makeUser(fullName: String?) -> User {

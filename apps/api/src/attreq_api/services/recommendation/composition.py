@@ -347,6 +347,21 @@ def classify_item_bonus(
 # ============================================================================
 
 
+def _apply_weights(weights: dict[str, float], centroid_active: bool) -> dict[str, float]:
+    """Active-key renormalization (RI-5): when the RI-6 centroid signal isn't
+    available this generation (`item_vectors`/`user_centroid` both `None`),
+    drop its weight mass and renormalize the remaining keys to sum 1 rather
+    than silently discarding it. Generic over both the Phase-A
+    `weight_fitting.FALLBACK_WEIGHTS` constant and a Phase-B fitted `W` from
+    `weight_fitting.get_active_weights` — same shape, same treatment.
+    """
+    if centroid_active:
+        return weights
+    active = {k: v for k, v in weights.items() if k != "centroid"}
+    total = sum(active.values()) or 1.0
+    return {k: v / total for k, v in active.items()}
+
+
 def _base_compatibility(
     core_items: list[WardrobeItem],
     weather: dict[str, Any],
@@ -355,18 +370,28 @@ def _base_compatibility(
     now: datetime | None,
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> tuple[float, dict[str, float], str]:
-    """Weighted color/context/style_dna/behaviour(/centroid) blend — identical
-    weighting to the pre-RI-4 `generate_daily_outfits` (RI-3 context score
-    occupies the old formality slot) UNLESS RI-6's FashionCLIP centroid is
-    active (`item_vectors is not None or user_centroid is not None`), in
-    which case a hand-tuned 0.10 weight is carved out for it — taken from
-    `style_dna` when Style DNA is present, split evenly between
-    color/context otherwise. Provisional, superseded by RI-5's fitted
-    weights. Returns `(base_compatibility, components, branch)`.
-    `components` never includes `preference_bonus` — that stays a separate
-    additive term (section 5.5) so `base_compatibility` is purely the
-    positive compatibility signal the confidence hedge keys off of.
+    """Weighted color/context/style_dna/behaviour(/centroid) blend.
+
+    RI-5 (Task 5.1): the old hard scheme-switch keyed on "does this user have
+    a Style DNA profile" is gone. Unconditionally: `style_dna_score` (quiz
+    content, defaults 0.5 with no quiz) and `behaviour_score` (now computed
+    from the Bayesian quiz->behaviour blend, `blend.compute_effective_pref` —
+    a no-quiz, no-feedback user gets a neutral 0.5 for both, same net effect
+    as the old "no style_dna" branch, but with no cliff as behaviour
+    accumulates). `weights` is the aggregation weight set — a Phase-A
+    hand-tuned constant or a Phase-B fitted `W`
+    (`weight_fitting.get_active_weights`), read ONCE per generation by the
+    caller and threaded down here; never fitted in this call path. Absent
+    centroid data, its weight mass is redistributed (`_apply_weights`) rather
+    than wasted on a fixed neutral 0.5 term.
+
+    Returns `(base_compatibility, components, branch)`. `components` never
+    includes `preference_bonus` — that stays a separate additive term
+    (section 5.5) so `base_compatibility` is purely the positive
+    compatibility signal the confidence hedge keys off of.
     """
     # Deferred import: algorithm.py is the canonical home of these pair-scoring
     # primitives (also imported by services/stats + scripts/eval_outfits.py);
@@ -379,6 +404,8 @@ def _base_compatibility(
         calculate_color_harmony_detailed,
     )
     from attreq_api.services.recommendation.context_scoring import calculate_context_score
+    from attreq_api.services.recommendation.weight_fitting import FALLBACK_WEIGHTS
+    from attreq_api.services.style_dna.blend import compute_effective_pref
     from attreq_api.services.style_dna.color_families import color_family_for_name
     from attreq_api.services.style_dna.personal_color import apply_personal_color_adjustment
     from attreq_api.services.style_dna.scoring import (
@@ -408,7 +435,9 @@ def _base_compatibility(
         color_score = 0.85
         branch = "none"
 
-    context_score, context_detail = calculate_context_score(core_items, occasion, weather, now=now)
+    context_score, context_detail = calculate_context_score(
+        core_items, occasion, weather, now=now, formality_bias=formality_bias
+    )
 
     # RI-6: centroid is "active" only when the caller (algorithm.py, gated by
     # settings.embeddings_enabled) actually threaded non-None data through —
@@ -427,30 +456,27 @@ def _base_compatibility(
         if per_item:
             centroid_component = sum(per_item) / len(per_item)
 
-    style_dna_score = 0.0
-    behaviour_score = 0.0
-    if style_dna:
-        style_dna_score = calculate_style_dna_score(core_items, style_dna)
-        behaviour_score = calculate_behaviour_score(core_items, style_dna.get("behaviour_weights", {}))
-        if centroid_active:
-            base = (
-                color_score * 0.20
-                + context_score * 0.20
-                + style_dna_score * 0.30
-                + behaviour_score * 0.20
-                + centroid_component * 0.10
-            )
-        else:
-            base = (
-                color_score * 0.20
-                + context_score * 0.20
-                + style_dna_score * 0.40
-                + behaviour_score * 0.20
-            )
-    elif centroid_active:
-        base = color_score * 0.45 + context_score * 0.45 + centroid_component * 0.10
-    else:
-        base = color_score * 0.5 + context_score * 0.5
+    # RI-5 (Task 5.1): unconditional Bayesian blend — no hard switch on
+    # "profile exists". `style_dna or {}` -> calculate_style_dna_score
+    # defaults 0.5 with no quiz; compute_effective_pref -> neutral 0.5 per
+    # key with no quiz AND no observed behaviour, fading toward observed
+    # behaviour per-key as `behaviour_counts` accumulate (see blend.py).
+    style_dna_dict = style_dna or {}
+    effective_pref = compute_effective_pref(
+        style_dna_dict, style_dna_dict.get("behaviour_counts", {}), k=15
+    )
+    style_dna_score = calculate_style_dna_score(core_items, style_dna_dict)
+    behaviour_score = calculate_behaviour_score(core_items, effective_pref)
+
+    active_weights = _apply_weights(weights or FALLBACK_WEIGHTS, centroid_active)
+    base = (
+        active_weights.get("color_harmony", 0.0) * color_score
+        + active_weights.get("formality", 0.0) * context_score
+        + active_weights.get("style_dna", 0.0) * style_dna_score
+        + active_weights.get("behaviour", 0.0) * behaviour_score
+    )
+    if centroid_active:
+        base += active_weights.get("centroid", 0.0) * centroid_component
 
     components = {
         "color_harmony": round(color_score, 4),
@@ -594,11 +620,21 @@ def _build_candidate(
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
     propagation_penalties: dict[UUID, float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> OutfitCandidate:
     core_items = [i for i in (top_item, bottom_item, fullbody_item) if i is not None]
 
     base, components, branch = _base_compatibility(
-        core_items, weather, occasion, style_dna, now, item_vectors, user_centroid
+        core_items,
+        weather,
+        occasion,
+        style_dna,
+        now,
+        item_vectors,
+        user_centroid,
+        weights=weights,
+        formality_bias=formality_bias,
     )
     preference_bonus = _preference_bonus(core_items, preferred_colors)
     cold_start_bonus, rediscovery_bonus, best_redisc_id, best_redisc_bonus = _item_bonuses(
@@ -693,6 +729,8 @@ def _fill_bottom_for_anchor(
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
     propagation_penalties: dict[UUID, float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> OutfitCandidate | None:
     """Argmax-fill the bottom slot for a top anchor, HARD-excluding any
     bottom whose combo with this anchor is already in `rotation_ctx
@@ -727,6 +765,8 @@ def _fill_bottom_for_anchor(
                 item_vectors=item_vectors,
                 user_centroid=user_centroid,
                 propagation_penalties=propagation_penalties,
+                weights=weights,
+                formality_bias=formality_bias,
             )
             if is_repeat:
                 penalty = combo_penalty(combo, rotation_ctx)
@@ -767,6 +807,8 @@ def _build_fullbody_candidate(
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
     propagation_penalties: dict[UUID, float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> OutfitCandidate | None:
     combo = frozenset({anchor.id})
     is_repeat = combo_in_recent(combo, rotation_ctx)
@@ -791,6 +833,8 @@ def _build_fullbody_candidate(
         item_vectors=item_vectors,
         user_centroid=user_centroid,
         propagation_penalties=propagation_penalties,
+        weights=weights,
+        formality_bias=formality_bias,
     )
     if is_repeat:
         penalty = combo_penalty(combo, rotation_ctx)
@@ -840,6 +884,8 @@ def generate_outfits(
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
     propagation_penalties: dict[UUID, float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> list[OutfitCandidate]:
     """Anchor selection + greedy slot-fill, over already-built pools.
 
@@ -850,6 +896,15 @@ def generate_outfits(
     thumbs-propagation to participate in scoring must pass non-`None` values
     (see `algorithm.py::generate_daily_outfits`, gated behind
     `settings.embeddings_enabled`).
+
+    `weights` (RI-5): the aggregation weight set applied in
+    `_base_compatibility` — `None` falls back to
+    `weight_fitting.FALLBACK_WEIGHTS` (Phase-A hand-tuned constants); real
+    callers pass the result of `weight_fitting.get_active_weights`, read ONCE
+    per generation. `formality_bias` (RI-5, Task 5.4a): soft occasion-hint
+    bias (`services.recommendation.vibe.VIBE_FORMALITY_BIAS`) folded into the
+    context score — `0.0` (the default) reproduces byte-identical pre-RI-5
+    behavior.
     """
     today = today or date.today()
     preferred_colors = preferred_colors or {}
@@ -883,6 +938,8 @@ def generate_outfits(
                 item_vectors=item_vectors,
                 user_centroid=user_centroid,
                 propagation_penalties=propagation_penalties,
+                weights=weights,
+                formality_bias=formality_bias,
             )
         else:
             candidate = _fill_bottom_for_anchor(
@@ -903,6 +960,8 @@ def generate_outfits(
                 item_vectors=item_vectors,
                 user_centroid=user_centroid,
                 propagation_penalties=propagation_penalties,
+                weights=weights,
+                formality_bias=formality_bias,
             )
         if candidate is not None:
             candidates.append(candidate)
@@ -936,6 +995,8 @@ def compose_daily_outfits(
     item_vectors: dict[UUID, list[float]] | None = None,
     user_centroid: list[float] | None = None,
     propagation_penalties: dict[UUID, float] | None = None,
+    weights: dict[str, float] | None = None,
+    formality_bias: float = 0.0,
 ) -> list[OutfitCandidate]:
     """PURE core: no DB access, no session. Drives the eval harness and the
     unit test suite; `algorithm.generate_daily_outfits` is the thin DB shell
@@ -976,4 +1037,6 @@ def compose_daily_outfits(
         item_vectors=item_vectors,
         user_centroid=user_centroid,
         propagation_penalties=propagation_penalties,
+        weights=weights,
+        formality_bias=formality_bias,
     )

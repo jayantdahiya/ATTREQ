@@ -191,6 +191,16 @@ final class TodayViewModel {
     /// `ProfileViewModel.needsRefresh`.
     @ObservationIgnored private var needsRefresh = false
 
+    /// RI-5 (Task 5.4): the day's answered morning-vibe hint, `nil` until the
+    /// user picks one. Persisted across `load()`/`refresh()` calls (a
+    /// pull-to-refresh must not silently drop an already-answered hint).
+    @ObservationIgnored private(set) var vibeHint: String?
+
+    /// RI-5 (Task 5.3): today's swipe-deck rating count/cap — `nil` until
+    /// `loadSwipeDeckStatus()` resolves; best-effort, never blocks the
+    /// primary Today load.
+    private(set) var swipeDeckStatus: SwipeDeckStatus?
+
     init(repository: RecommendationsRepository) {
         self.repository = repository
     }
@@ -225,7 +235,9 @@ final class TodayViewModel {
             state = .loading
         }
         do {
-            let response = try await repository.daily(refresh: refresh, occasion: occasion ?? "casual")
+            let response = try await repository.daily(
+                refresh: refresh, occasion: occasion ?? "casual", occasionHint: vibeHint
+            )
             suggestions = response.suggestions
             currentIndex = 0
             weather = response.weather
@@ -252,6 +264,66 @@ final class TodayViewModel {
                 state = .failed(message)
             }
         }
+    }
+
+    // MARK: Morning vibe prompt (RI-5, Task 5.4)
+
+    /// "Remembered per day": a wrong/stale guess here only costs a redundant
+    /// prompt (never blocks anything), so a plain date-keyed `UserDefaults`
+    /// flag is sufficient — no need for the heavier per-day server round trip
+    /// (`user_events` `vibe_answered`) just to decide whether to show the chip
+    /// row again.
+    private static let vibeAnsweredDateDefaultsKey = "com.attreq.vibeAnsweredDate"
+
+    var hasAnsweredVibeToday: Bool {
+        UserDefaults.standard.string(forKey: Self.vibeAnsweredDateDefaultsKey) == Self.todayWornDate()
+    }
+
+    /// One-tap chip selection (Sharp/Relaxed/Bold): marks today answered and
+    /// re-fetches with `occasion_hint` set — a soft formality nudge, not a
+    /// hard filter (see backend `services/recommendation/vibe.py`).
+    func selectVibe(_ hint: String) async {
+        markVibeAnsweredToday()
+        vibeHint = hint
+        await fetch(refresh: false)
+    }
+
+    /// Skippable by design — marks the day answered with no hint, so the
+    /// chip row doesn't nag again until tomorrow.
+    func skipVibe() {
+        markVibeAnsweredToday()
+    }
+
+    private func markVibeAnsweredToday() {
+        UserDefaults.standard.set(Self.todayWornDate(), forKey: Self.vibeAnsweredDateDefaultsKey)
+    }
+
+    // MARK: Swipe deck entry point (RI-5, Task 5.3)
+
+    /// Best-effort — a failure here just leaves `swipeDeckStatus` `nil`
+    /// (`showsSwipeDeckEntry` defaults to showing the entry point rather than
+    /// hiding a feature the user hasn't exhausted), never blocks/errors the
+    /// primary Today load.
+    func loadSwipeDeckStatus() async {
+        do {
+            swipeDeckStatus = try await repository.swipeDeckStatus()
+        } catch {
+            logger.error("swipe-deck status failed (non-fatal): \(String(describing: error))")
+        }
+    }
+
+    /// Whether to show the "Rate a few looks" entry card — hidden once
+    /// today's rating cap is reached.
+    var showsSwipeDeckEntry: Bool {
+        swipeDeckStatus?.hasRatingsRemaining ?? true
+    }
+
+    /// Factory for the swipe-deck sheet — reuses this view model's already-
+    /// injected `repository` rather than requiring `TodayScreen` to construct
+    /// its own `RecommendationsRepository` (which would need a second
+    /// `APIClient` reference `OutfitsRepository` doesn't expose).
+    func makeSwipeDeckViewModel() -> SwipeDeckViewModel {
+        SwipeDeckViewModel(repository: repository)
     }
 
     // MARK: Actions

@@ -148,6 +148,14 @@ class DailySuggestionsResponse(BaseModel):
     cached: bool = Field(False, description="Whether results were served from cache")
 
 
+class SwipeDeckStatusResponse(BaseModel):
+    """RI-5 (Task 5.3): today's swipe-deck rating count + cap, so the client
+    can show/hide the entry point without inferring state from a 429."""
+
+    ratings_today: int = Field(..., description="Swipe-deck ratings submitted today")
+    cap: int = Field(..., description="Daily rating cap")
+
+
 class DailySuggestionRequest(BaseModel):
     """Request parameters for daily suggestions (for documentation)."""
 

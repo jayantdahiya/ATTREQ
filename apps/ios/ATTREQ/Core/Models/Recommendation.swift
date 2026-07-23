@@ -102,3 +102,14 @@ struct DailySuggestionsResponse: Codable, Sendable, Equatable {
     let occasion: String
     let cached: Bool
 }
+
+/// Mirrors backend `SwipeDeckStatusResponse` (RI-5, `GET
+/// /recommendations/swipe-deck/status`) — today's rating count + the daily
+/// cap, so the client can show/hide the swipe-deck entry point without
+/// inferring state from a 429 on the feedback endpoint.
+struct SwipeDeckStatus: Codable, Sendable, Equatable {
+    let ratingsToday: Int
+    let cap: Int
+
+    var hasRatingsRemaining: Bool { ratingsToday < cap }
+}
