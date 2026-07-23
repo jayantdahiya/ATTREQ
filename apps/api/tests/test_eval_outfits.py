@@ -61,6 +61,58 @@ def test_score_against_scorer_returns_valid_auc():
     assert 0.0 <= auc <= 1.0
 
 
+def test_generate_synthetic_preference_pairs_shape():
+    pairs = eval_outfits.generate_synthetic_preference_pairs(n_users=5, batches_per_user=4, seed=1)
+
+    assert len(pairs) == 20
+    assert len({p.user_id for p in pairs}) == 5
+    assert len({p.recommendation_id for p in pairs}) == 20
+    for pair in pairs:
+        # Planted signal: the positive side always wins on color_harmony/style_dna.
+        assert pair.components_pos["color_harmony"] > pair.components_neg["color_harmony"]
+        assert pair.components_pos["style_dna"] > pair.components_neg["style_dna"]
+
+
+def test_evaluate_fitted_vs_baseline_planted_preference_fitted_beats_baseline():
+    """RI-5 Task 5.5 exit criterion: on held-out preference pairs where the
+    hand-tuned baseline (FALLBACK_WEIGHTS) spreads real weight onto noisy
+    components (formality/behaviour), a correct fit that concentrates weight
+    on the actual signal (color_harmony/style_dna) must report a strictly
+    higher user-conditioned holdout AUC than the baseline.
+    """
+    pairs = eval_outfits.generate_synthetic_preference_pairs(n_users=30, batches_per_user=20, seed=42)
+    report = eval_outfits.evaluate_fitted_vs_baseline(pairs, holdout_frac=0.2, seed=42)
+
+    assert report["fitted_beats_baseline"] is True
+    assert report["fitted_user_auc"] > report["baseline_user_auc"]
+    assert sum(report["fitted_weights"].values()) == pytest.approx(1.0)
+    assert sum(report["baseline_weights"].values()) == pytest.approx(1.0)
+    # The fit should learn to concentrate weight on the actual signal.
+    assert (
+        report["fitted_weights"]["color_harmony"] + report["fitted_weights"]["style_dna"] > 0.9
+    )
+
+
+async def test_run_weights_fitted_eval_falls_back_to_synthetic_when_no_real_pairs(monkeypatch):
+    """When `recommendation_events` has no real preference pairs (a fresh
+    database, or before RI-1 telemetry accumulates), `--weights fitted` must
+    still run end to end against the seeded synthetic fallback rather than
+    erroring out."""
+
+    async def _empty_pairs(db, user_id=None):
+        return []
+
+    monkeypatch.setattr(eval_outfits, "extract_preference_pairs", _empty_pairs)
+
+    report = await eval_outfits.run_weights_fitted_eval(seed=42)
+
+    assert report["used_synthetic_pairs"] is True
+    assert report["n_pairs_total"] > 0
+    assert 0.0 <= report["fitted_user_auc"] <= 1.0
+    assert 0.0 <= report["baseline_user_auc"] <= 1.0
+    assert report["fitted_beats_baseline"] is True
+
+
 def test_score_against_scorer_raises_on_single_class():
     import pandas as pd
 

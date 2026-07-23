@@ -62,7 +62,7 @@ def main() -> int:
     # image against each label. We only assert the machinery produces a
     # sensible ranking spread, not a specific winner (the sample is a full
     # wardrobe photo, not a single garment).
-    sims = {lbl: float(np.dot(v, np.asarray(t))) for lbl, t in zip(labels, texts)}
+    sims = {lbl: float(np.dot(v, np.asarray(t))) for lbl, t in zip(labels, texts, strict=True)}
     print("image↔label cosine similarities:")
     for lbl, s in sorted(sims.items(), key=lambda kv: -kv[1]):
         print(f"  {s:+.4f}  {lbl}")

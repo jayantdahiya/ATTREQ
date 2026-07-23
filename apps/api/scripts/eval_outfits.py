@@ -10,17 +10,30 @@ weights or the recommendation algorithm itself — `score_pair` is a read-only,
 minimal wrapper around the existing scoring functions so RI-3/4/5 can swap scorers
 without rewriting this harness.
 
+RI-5 Task 5.5 (`--weights fitted`) is the exception to that "no scoring-weight
+change" rule: it does not change any weights itself (that's
+`scripts/fit_scoring_weights.py`'s job), it only evaluates — pulling real
+preference pairs from `recommendation_events` (or a seeded synthetic set if
+none exist yet), fitting weights on a train split, and reporting
+user-conditioned holdout AUC for the fitted weights vs. the hand-tuned
+baseline (`FALLBACK_WEIGHTS`). Advisory only: it prints the comparison and
+never exits nonzero on a loss.
+
 Usage:
     python scripts/eval_outfits.py --generate --out tests/fixtures/eval/outfit_pairs_unlabeled.csv
     python scripts/eval_outfits.py --score tests/fixtures/eval/outfit_labels.csv
+    python scripts/eval_outfits.py --compare legacy,branched
+    python scripts/eval_outfits.py --weights fitted --metric user_auc
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import random
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +47,17 @@ from attreq_api.models.wardrobe import WardrobeItem  # noqa: E402
 from attreq_api.services.recommendation.algorithm import (  # noqa: E402
     calculate_color_harmony_score,
     calculate_formality_score,
+)
+from attreq_api.services.recommendation.weight_fitting import (  # noqa: E402
+    FALLBACK_WEIGHTS,
+    PreferencePair,
+    build_feature_matrix,
+    compute_holdout_user_auc,
+    count_decision_batches,
+    detect_component_keys,
+    extract_preference_pairs,
+    fit_weights,
+    grouped_train_holdout_split,
 )
 
 # Only these fields are meaningful to the two scorer functions; anything else in a
@@ -225,6 +249,177 @@ def compare_scorers(labeled_df: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def generate_synthetic_preference_pairs(
+    n_users: int = 30, batches_per_user: int = 20, seed: int = 42
+) -> list[PreferencePair]:
+    """Seeded synthetic preference pairs, shaped like `weight_fitting.PreferencePair`,
+    used only as a bootstrap/local-dev fallback for `--weights fitted` when the
+    DB has no real `recommendation_events` yet (a fresh/ephemeral database, or
+    before RI-1 telemetry has accumulated any accept/reject signal).
+
+    Each synthetic user has the same latent preference structure: the chosen
+    (positive) outfit is planted with a small but ALWAYS-positive margin on
+    `color_harmony`/`style_dna`, while `formality`/`behaviour` are pure noise
+    (independent uniform draws on both sides, uncorrelated with which side
+    won) — i.e. the first two components carry 100% of the taste signal and
+    the other two carry none. `FALLBACK_WEIGHTS` (the hand-tuned baseline)
+    still spreads real weight across the noisy formality/behaviour components
+    (0.20 each) alongside the signal ones, so on a good fraction of pairs
+    that noise is large enough to outvote the deliberately small signal
+    margin and flip the baseline's ranking — while a correct fit learns to
+    concentrate weight on `color_harmony`/`style_dna` and keeps ranking
+    almost every pair correctly. Distinct `recommendation_id`s per batch and
+    `user_id`s per synthetic user keep the grouped split and macro-averaged
+    AUC meaningful, same as real data.
+
+    NOT a substitute for the real-data run the milestone doc asks to be
+    recorded by hand once RI-1 telemetry exists.
+    """
+    rng = random.Random(seed)
+
+    def _seeded_uuid() -> uuid.UUID:
+        # `uuid.uuid4()` draws from `os.urandom` and ignores `random.Random`
+        # entirely, so using it here would silently break the "seeded" claim
+        # (the grouped train/holdout split shuffles by these IDs — a
+        # non-reproducible ID means a non-reproducible split, and thus a
+        # non-reproducible AUC comparison, on every "same seed" re-run).
+        return uuid.UUID(int=rng.getrandbits(128), version=4)
+
+    pairs: list[PreferencePair] = []
+    for _ in range(n_users):
+        user_id = _seeded_uuid()
+        for _ in range(batches_per_user):
+            recommendation_id = _seeded_uuid()
+            # Small, always-positive signal margin (never a large gap).
+            pos_color = rng.uniform(0.5, 0.7)
+            neg_color = pos_color - rng.uniform(0.05, 0.2)
+            pos_style = rng.uniform(0.5, 0.7)
+            neg_style = pos_style - rng.uniform(0.05, 0.2)
+            pos = {
+                "color_harmony": pos_color,
+                "formality": rng.uniform(0.0, 1.0),
+                "style_dna": pos_style,
+                "behaviour": rng.uniform(0.0, 1.0),
+            }
+            neg = {
+                "color_harmony": neg_color,
+                "formality": rng.uniform(0.0, 1.0),
+                "style_dna": neg_style,
+                "behaviour": rng.uniform(0.0, 1.0),
+            }
+            pairs.append(
+                PreferencePair(
+                    components_pos=pos,
+                    components_neg=neg,
+                    user_id=user_id,
+                    recommendation_id=recommendation_id,
+                )
+            )
+    return pairs
+
+
+def evaluate_fitted_vs_baseline(
+    pairs: list[PreferencePair], holdout_frac: float = 0.2, seed: int = 42
+) -> dict[str, Any]:
+    """RI-5 Task 5.5 — pure (no DB) fit-and-compare core.
+
+    Splits `pairs` train/holdout GROUPED by `recommendation_id` (no batch
+    leakage — finalized RI-5 plan Correction 8), fits Bradley-Terry weights
+    on the train split, then reports user-conditioned holdout AUC
+    (`compute_holdout_user_auc`) for BOTH the fitted weights and the
+    hand-tuned baseline (`FALLBACK_WEIGHTS`, restricted+renormalized to the
+    detected component keys) on the identical holdout set, so the comparison
+    is fair. Advisory only — callers decide what to do with the result, this
+    function never raises on a "loss".
+    """
+    component_keys = detect_component_keys(pairs)
+    train_pairs, holdout_pairs = grouped_train_holdout_split(pairs, holdout_frac=holdout_frac, seed=seed)
+
+    x, y = build_feature_matrix(train_pairs, component_keys)
+    fitted_weights = fit_weights(x, y, component_keys)
+
+    restricted_baseline = {k: FALLBACK_WEIGHTS.get(k, 0.0) for k in component_keys}
+    total = sum(restricted_baseline.values()) or 1.0
+    baseline_weights = {k: v / total for k, v in restricted_baseline.items()}
+
+    fitted_auc = compute_holdout_user_auc(holdout_pairs, fitted_weights, component_keys)
+    baseline_auc = compute_holdout_user_auc(holdout_pairs, baseline_weights, component_keys)
+
+    return {
+        "n_pairs_total": len(pairs),
+        "n_train_pairs": len(train_pairs),
+        "n_holdout_pairs": len(holdout_pairs),
+        "n_decision_batches": count_decision_batches(pairs),
+        "component_keys": component_keys,
+        "fitted_weights": fitted_weights,
+        "baseline_weights": baseline_weights,
+        "fitted_user_auc": fitted_auc,
+        "baseline_user_auc": baseline_auc,
+        "fitted_beats_baseline": fitted_auc > baseline_auc,
+    }
+
+
+async def run_weights_fitted_eval(holdout_frac: float = 0.2, seed: int = 42) -> dict[str, Any]:
+    """RI-5 Task 5.5 — the `--weights fitted` async entry point.
+
+    Extracts pooled preference pairs from real `recommendation_events`
+    (`weight_fitting.extract_preference_pairs`, DB-backed); if the database
+    has none yet — e.g. a fresh/ephemeral eval environment before any real
+    RI-1 telemetry exists — falls back to `generate_synthetic_preference_pairs`
+    so the comparison still runs end to end (mirrors how
+    `scripts/fit_scoring_weights.py` treats an empty-pairs result as a
+    handled, non-crashing case, rather than reinventing that emptiness
+    handling here). Delegates the actual fit + AUC comparison to the pure
+    `evaluate_fitted_vs_baseline`.
+    """
+    from attreq_api.config.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        pairs = await extract_preference_pairs(db)
+
+    used_synthetic = False
+    if not pairs:
+        used_synthetic = True
+        pairs = generate_synthetic_preference_pairs(seed=seed)
+
+    report = evaluate_fitted_vs_baseline(pairs, holdout_frac=holdout_frac, seed=seed)
+    report["used_synthetic_pairs"] = used_synthetic
+    return report
+
+
+def _print_weights_fitted_report(report: dict[str, Any], metric: str) -> None:
+    def _fmt_weights(weights: dict[str, float]) -> str:
+        return ", ".join(f"{k}={v:.3f}" for k, v in weights.items())
+
+    print("RI-5 Task 5.5 — fitted vs. hand-tuned baseline scoring weights (advisory eval gate)")
+    if report["used_synthetic_pairs"]:
+        print(
+            "NOTE: no real recommendation_events found in the database — using a seeded "
+            "synthetic preference-pair set as a bootstrap/local-dev fallback. Re-run against "
+            "real telemetry once RI-1 events accumulate and record that run in the milestone doc."
+        )
+    print(
+        f"Preference pairs: {report['n_pairs_total']} total "
+        f"(train={report['n_train_pairs']}, holdout={report['n_holdout_pairs']}, "
+        f"decision_batches={report['n_decision_batches']})"
+    )
+    print(f"Component keys: {report['component_keys']}")
+    print(f"Fitted weights:   {_fmt_weights(report['fitted_weights'])}")
+    print(f"Baseline weights: {_fmt_weights(report['baseline_weights'])}")
+    print(f"Fitted   holdout {metric}: {report['fitted_user_auc']:.4f}")
+    print(f"Baseline holdout {metric}: {report['baseline_user_auc']:.4f}")
+    if report["fitted_beats_baseline"]:
+        print(
+            f"RESULT: fitted weights BEAT the hand-tuned baseline on holdout {metric} "
+            "(advisory only — does not fail CI)."
+        )
+    else:
+        print(
+            f"RESULT: fitted weights did NOT beat the hand-tuned baseline on holdout {metric} "
+            "(advisory only — does not fail CI)."
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="RI-1/RI-3 outfit-quality eval harness")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -243,6 +438,17 @@ def main() -> None:
             "Advisory only: prints a regression warning but never exits nonzero."
         ),
     )
+    group.add_argument(
+        "--weights",
+        choices=["fitted"],
+        default=None,
+        help=(
+            "RI-5 Task 5.5: fit Bradley-Terry scoring weights on held-out preference pairs "
+            "(real recommendation_events, or a seeded synthetic set if none exist yet) and "
+            "compare against the hand-tuned baseline (FALLBACK_WEIGHTS) via user-conditioned "
+            "holdout AUC. Advisory only: prints the comparison, never exits nonzero on a loss."
+        ),
+    )
     parser.add_argument("--n", type=int, default=100, help="Number of pairs to generate (--generate only)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
@@ -250,6 +456,18 @@ def main() -> None:
         type=Path,
         default=Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "eval" / "outfit_pairs_unlabeled.csv",
         help="Output path for --generate",
+    )
+    parser.add_argument(
+        "--metric",
+        choices=["user_auc"],
+        default="user_auc",
+        help="Metric to report for --weights fitted (only user_auc is supported)",
+    )
+    parser.add_argument(
+        "--holdout-frac",
+        type=float,
+        default=0.2,
+        help="Holdout fraction (by recommendation_id) for --weights fitted",
     )
     args = parser.parse_args()
 
@@ -269,6 +487,11 @@ def main() -> None:
                 "WARNING: branched AUC is lower than legacy on this hand-authored fixture "
                 "(advisory only, not a blocking gate — see compare_scorers() docstring)."
             )
+        return
+
+    if args.weights == "fitted":
+        report = asyncio.run(run_weights_fitted_eval(holdout_frac=args.holdout_frac, seed=args.seed))
+        _print_weights_fitted_report(report, args.metric)
         return
 
     labeled_df = ingest_labels(Path(args.score))
