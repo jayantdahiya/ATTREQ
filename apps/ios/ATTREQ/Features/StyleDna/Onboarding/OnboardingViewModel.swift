@@ -256,6 +256,50 @@ final class OnboardingViewModel {
         }
     }
 
+    // MARK: - Personal-color selfie (RI-3, optional final onboarding step)
+    //
+    // `POST /users/style-dna/selfie` — opt-in, feature-flagged, and NEVER
+    // allowed to block onboarding. The endpoint 404s when the server-side
+    // flag is off and 400s if consent wasn't true; both, along with any
+    // other failure (network, 500, decoding), land in `.failed` here rather
+    // than throwing — the flow shell always has a "Continue" path forward
+    // regardless of outcome (see `PersonalColorSelfieView`).
+
+    enum PersonalColorState: Equatable {
+        case idle
+        case analyzing
+        case done
+        case failed(String)
+    }
+
+    private(set) var personalColorState: PersonalColorState = .idle
+    var isAnalyzingPersonalColor: Bool {
+        if case .analyzing = personalColorState { return true }
+        return false
+    }
+
+    /// Submits the selfie for personal-color estimation. `consent` must be
+    /// `true` when the caller has the user's explicit opt-in (the only way
+    /// this should ever be invoked) — sending `false` is a defensive
+    /// impossibility, not a supported "silent" path.
+    func estimatePersonalColor(
+        imageData: Data,
+        consent: Bool,
+        using repository: StyleDnaRepository
+    ) async {
+        guard !isAnalyzingPersonalColor else { return }
+        personalColorState = .analyzing
+        do {
+            _ = try await repository.estimatePersonalColor(imageData: imageData, consent: consent)
+            personalColorState = .done
+        } catch {
+            // Graceful degradation: this is a soft failure, not a hard stop —
+            // 404 (feature disabled), 400 (consent), or anything else all
+            // just mean "no personal-color estimate this time."
+            personalColorState = .failed(AuthErrorMessage.describe(error))
+        }
+    }
+
     private func complete(session: AppSession) async {
         guard !isCompleting else { return }
         completionError = nil

@@ -22,6 +22,12 @@ struct OnboardingFlowView: View {
         /// prior paths (skip / "Looks right" with no detected items /
         /// review confirm) instead of completing onboarding directly.
         case wardrobeCapture
+        /// RI-3: optional, skippable personal-color selfie — the final step,
+        /// reached after wardrobe capture regardless of which prior path got
+        /// there. Never blocks completion: both "Skip for now" and a failed
+        /// analysis lead to the same `model.skip(session:)` completion call
+        /// as every other path.
+        case personalColorSelfie
     }
 
     @Environment(AppSession.self) private var session
@@ -77,7 +83,10 @@ struct OnboardingFlowView: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, -7)
-            .disabled(step == .upload || step == .wardrobeCapture || model.uploadResponse != nil || model.isCompleting)
+            .disabled(
+                step == .upload || step == .wardrobeCapture || step == .personalColorSelfie
+                    || model.uploadResponse != nil || model.isCompleting
+            )
             .accessibilityLabel("Back")
 
             MonoLabel("Style DNA Setup")
@@ -114,7 +123,13 @@ struct OnboardingFlowView: View {
                 model: model,
                 wardrobeRepository: wardrobeRepository,
                 recommendationsRepository: recommendationsRepository,
-                onFinish: { Task { await model.skip(session: session) } }
+                onFinish: { go(to: .personalColorSelfie) }
+            )
+        case .personalColorSelfie:
+            PersonalColorSelfieView(
+                model: model,
+                styleDnaRepository: repository,
+                onDone: { Task { await model.skip(session: session) } }
             )
         }
     }
@@ -162,6 +177,8 @@ struct OnboardingFlowView: View {
             go(to: .results)
         case .wardrobeCapture:
             go(to: .results)
+        case .personalColorSelfie:
+            go(to: .wardrobeCapture)
         }
     }
 

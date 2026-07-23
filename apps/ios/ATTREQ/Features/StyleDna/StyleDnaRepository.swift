@@ -22,6 +22,15 @@
 //  - POST   /wardrobe/items/bulk          top-level JSON array of detected-item dicts
 //    (snake_case keys), max 50; returns the created WardrobeItemResponse list. 201.
 //  - POST   /users/onboarding/complete    marks onboarding done; returns UserResponse.
+//  - POST   /users/style-dna/selfie       multipart, field "file" (single face photo)
+//    + form field "consent" (bool). Optional, opt-in personal-color estimation
+//    (RI-3): merges `style_dna.personal_color` (undertone/depth axes + confidence)
+//    server-side and returns the updated StyleDnaProfileResponse. The photo is
+//    sent once to the configured third-party classifier vendor and is NEVER
+//    stored (no DB row, temp file deleted server-side in a `finally`). Feature-
+//    flagged OFF by default (404 when disabled) and 400s if `consent` isn't
+//    true — callers MUST treat both as a soft "skip", never a hard failure:
+//    this step is optional and skipping costs the user nothing.
 //
 
 import Foundation
@@ -129,6 +138,39 @@ final class StyleDnaRepository: Sendable {
     func completeOnboarding() async throws -> User {
         try await apiClient.request(
             Endpoint(method: .post, path: "users/onboarding/complete")
+        )
+    }
+
+    /// `POST /users/style-dna/selfie` — optional, opt-in personal-color
+    /// estimation from a single face photo (RI-3). `consent` MUST be `true`
+    /// for the backend to proceed (it 400s otherwise); this call only makes
+    /// sense after the caller has shown explicit consent copy and the user
+    /// has agreed. The backend feature-flags this route (`ENABLE_PERSONAL_
+    /// COLOR_SELFIE`, default OFF) and returns 404 when disabled — like a 400
+    /// or any other error, callers must treat that as a graceful skip, never
+    /// a blocking failure, since the step is optional by design.
+    ///
+    /// PRIVACY: the photo is transmitted once to the configured third-party
+    /// classifier vendor for analysis and is never persisted server-side —
+    /// see the endpoint docstring in `endpoints/style_dna.py`.
+    func estimatePersonalColor(imageData: Data, consent: Bool) async throws -> StyleDnaProfileResponse {
+        try await apiClient.request(
+            Endpoint(
+                method: .post,
+                path: "users/style-dna/selfie",
+                body: .multipart([
+                    MultipartField(
+                        name: "file",
+                        filename: "selfie.jpg",
+                        contentType: "image/jpeg",
+                        data: imageData
+                    ),
+                    MultipartField(
+                        name: "consent",
+                        data: Data(consent ? "true".utf8 : "false".utf8)
+                    ),
+                ])
+            )
         )
     }
 }
