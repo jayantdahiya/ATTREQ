@@ -25,15 +25,17 @@ Take ATTREQ's recommendation engine from "hand-tuned heuristic that works on day
 
 ## Milestones
 
+> **Implementation status (2026-07-23):** all seven milestones implemented, integrated, and verified on branch `feat/recommendation-intelligence` (not pushed/PR'd). Single linear Alembic chain, `alembic check` clean, 376 backend tests + 138 iOS tests passing. **Caveats:** real FashionCLIP inference (RI-6) was never exercised (torch absent in the build env; `EMBEDDINGS_ENABLED=false`); the DeepFashion tagging eval gate (RI-1/RI-2) has only synthetic fixtures (real dataset is Google-Drive-gated); the optional iOS personal-color selfie UI (RI-3) and the `eval_outfits --weights fitted` flag (RI-5 task 5.5) were deferred.
+
 | # | File | Goal (one line) | Depends on | Status |
 |---|------|-----------------|------------|--------|
-| RI-1 | [01-milestone-1-telemetry-eval-harness.md](01-milestone-1-telemetry-eval-harness.md) | Preference-pair logging, event stream, tagging benchmark, labeled outfit eval set | — | Not started |
-| RI-2 | [02-milestone-2-classifier-schema-v2.md](02-milestone-2-classifier-schema-v2.md) | Expanded fixed-enum tag schema + deterministic CIELAB pixel color extraction | RI-1 (benchmark to regression-test against) | Not started |
-| RI-3 | [03-milestone-3-color-context-scoring.md](03-milestone-3-color-context-scoring.md) | CIELAB color harmony (tonal / neutral-contrast / hue), personal-color prior, occasion-dominant context weights | RI-2 (Lab colors stored) | Not started |
-| RI-4 | [04-milestone-4-composition-explanations.md](04-milestone-4-composition-explanations.md) | Seeded greedy outfit generation, full-body branch, anti-repetition, grey-inventory resurfacing, calibrated explanations | RI-3 + launch roadmap M3 (slots) | Not started |
-| RI-5 | [05-milestone-5-adaptive-personalization.md](05-milestone-5-adaptive-personalization.md) | Bayesian quiz-prior blend, fitted scoring weights from preference pairs, swipe deck, morning vibe prompt | RI-1 (accumulated pairs) + RI-4 | Not started |
-| RI-6 | [06-milestone-6-embeddings-reranker.md](06-milestone-6-embeddings-reranker.md) | FashionCLIP embedding per item (Weaviate), similarity term, feedback propagation, tag cross-check, optional LLM re-ranker | RI-2; parallel with RI-5 | Not started |
-| RI-7 | [07-milestone-7-retention-trust.md](07-milestone-7-retention-trust.md) | Wardrobe stats, multi-photo items, archive-don't-delete, batch-capture onboarding, positioning copy | RI-1 (wear events); parallel with RI-5/RI-6 | Not started |
+| RI-1 | [01-milestone-1-telemetry-eval-harness.md](01-milestone-1-telemetry-eval-harness.md) | Preference-pair logging, event stream, tagging benchmark, labeled outfit eval set | — | ✅ Done |
+| RI-2 | [02-milestone-2-classifier-schema-v2.md](02-milestone-2-classifier-schema-v2.md) | Expanded fixed-enum tag schema + deterministic CIELAB pixel color extraction | RI-1 (benchmark to regression-test against) | ✅ Done |
+| RI-3 | [03-milestone-3-color-context-scoring.md](03-milestone-3-color-context-scoring.md) | CIELAB color harmony (tonal / neutral-contrast / hue), personal-color prior, occasion-dominant context weights | RI-2 (Lab colors stored) | ✅ Done (selfie UI deferred) |
+| RI-4 | [04-milestone-4-composition-explanations.md](04-milestone-4-composition-explanations.md) | Seeded greedy outfit generation, full-body branch, anti-repetition, grey-inventory resurfacing, calibrated explanations | RI-3 + launch roadmap M3 (slots) | ✅ Done |
+| RI-5 | [05-milestone-5-adaptive-personalization.md](05-milestone-5-adaptive-personalization.md) | Bayesian quiz-prior blend, fitted scoring weights from preference pairs, swipe deck, morning vibe prompt | RI-1 (accumulated pairs) + RI-4 | ✅ Done (eval-gate flag 5.5 deferred) |
+| RI-6 | [06-milestone-6-embeddings-reranker.md](06-milestone-6-embeddings-reranker.md) | FashionCLIP embedding per item (Weaviate), similarity term, feedback propagation, tag cross-check, optional LLM re-ranker | RI-2; parallel with RI-5 | ✅ Done (real inference unexercised; flag-gated off) |
+| RI-7 | [07-milestone-7-retention-trust.md](07-milestone-7-retention-trust.md) | Wardrobe stats, multi-photo items, archive-don't-delete, batch-capture onboarding, positioning copy | RI-1 (wear events); parallel with RI-5/RI-6 | ✅ Done |
 
 ## Sequencing rationale
 
