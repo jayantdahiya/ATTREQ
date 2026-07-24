@@ -1,12 +1,12 @@
 module.exports = {
   preset: 'react-native',
-  testEnvironment: '<rootDir>/jest.react-native-env.js',
-  forceExit: true,
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native|@react-navigation|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|expo-router|@expo/vector-icons|nativewind|react-native-reanimated|react-native-safe-area-context|@shopify/flash-list))',
-  ],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-}
+  testPathIgnorePatterns: ['/node_modules/', '/_legacy/'],
+  modulePathIgnorePatterns: ['/_legacy/'],
+  transformIgnorePatterns: [
+    'node_modules/(?!(@react-native|react-native|react-native-svg|react-native-reanimated|react-native-worklets|@react-navigation|react-native-gesture-handler|react-native-safe-area-context|@shopify/flash-list)/)',
+  ],
+};
