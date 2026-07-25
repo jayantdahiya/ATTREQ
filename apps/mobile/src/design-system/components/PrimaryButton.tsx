@@ -12,6 +12,7 @@ export function PrimaryButton({
   isLoading = false,
   disabled = false,
   icon,
+  testID,
 }: {
   label: string;
   onPress?: () => void;
@@ -19,6 +20,7 @@ export function PrimaryButton({
   isLoading?: boolean;
   disabled?: boolean;
   icon?: AttreqIconName;
+  testID?: string;
 }) {
   const t = useTheme();
   const bg = variant === 'accent' ? t.colors.accent : t.colors.text;
@@ -26,6 +28,7 @@ export function PrimaryButton({
     <Pressable
       onPress={onPress}
       disabled={disabled || isLoading}
+      testID={testID}
       accessibilityRole="button"
       style={{
         backgroundColor: bg,

@@ -13,6 +13,7 @@ export function UnderlineInput({
   placeholder,
   keyboardType,
   autoCapitalize = 'none',
+  testID,
 }: {
   label: string;
   value: string;
@@ -21,6 +22,7 @@ export function UnderlineInput({
   placeholder?: string;
   keyboardType?: KeyboardTypeOptions;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  testID?: string;
 }) {
   const t = useTheme();
   return (
@@ -34,6 +36,7 @@ export function UnderlineInput({
         placeholderTextColor={t.colors.t3}
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
+        testID={testID}
         style={[
           body(14.5),
           { color: t.colors.text, borderBottomWidth: 1, borderBottomColor: t.colors.border, paddingVertical: 6 },

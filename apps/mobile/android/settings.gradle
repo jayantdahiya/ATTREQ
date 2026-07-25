@@ -1,6 +1,5 @@
 // Monorepo/workspace-aware: @react-native/gradle-plugin is hoisted to the repo-root
 // node_modules, so resolve its location via node instead of a fixed relative path.
-// NOTE: pluginManagement {} must be the first block, so the resolution is inlined.
 pluginManagement {
     def rnGradlePlugin = new File(
         ["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json')"]
@@ -13,6 +12,8 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex -> ex.autol
 rootProject.name = 'ATTREQ'
 include ':app'
 
+// Body-level composite build so the root buildscript's unversioned
+// `com.facebook.react:react-native-gradle-plugin` classpath is substituted.
 def rnGradlePlugin = new File(
     ["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json')"]
         .execute(null, settingsDir).text.trim()
