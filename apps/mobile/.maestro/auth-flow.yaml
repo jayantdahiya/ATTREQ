@@ -48,11 +48,18 @@ appId: com.attreq.mobile
 - tapOn:
     id: 'complete-onboarding'
 
-# --- Home ---
+# --- Tab shell (lands on Wardrobe) ---
 - extendedWaitUntil:
     visible:
-      id: 'home-screen'
+      id: 'main-tabs'
     timeout: 20000
+
+# --- Sign out from the Profile tab ---
+- tapOn: 'PROFILE'
+- extendedWaitUntil:
+    visible:
+      id: 'sign-out'
+    timeout: 10000
 - tapOn:
     id: 'sign-out'
 
@@ -70,8 +77,8 @@ appId: com.attreq.mobile
 - tapOn:
     id: 'login-submit'
 
-# Already onboarded → straight to Home
+# Already onboarded → straight to the tab shell
 - extendedWaitUntil:
     visible:
-      id: 'home-screen'
+      id: 'main-tabs'
     timeout: 20000

@@ -1,0 +1,23 @@
+appId: com.attreq.mobile
+# Helper: log in a seeded user and stop on the wardrobe grid (for screenshotting).
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn:
+    id: 'login-email'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-screen'
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-item-card'
+    timeout: 20000

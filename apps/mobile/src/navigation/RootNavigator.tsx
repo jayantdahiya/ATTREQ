@@ -6,7 +6,7 @@ import { useTheme } from '@/design-system/theme/ThemeProvider';
 import { display } from '@/design-system/theme/typography';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { RegisterScreen } from '@/features/auth/RegisterScreen';
-import { HomePlaceholderScreen } from '@/features/home/HomePlaceholderScreen';
+import { MainTabs } from '@/navigation/MainTabs';
 import { OnboardingPlaceholderScreen } from '@/features/onboarding/OnboardingPlaceholderScreen';
 import { authApi } from '@/lib/api/auth';
 import { queryKeys } from '@/lib/query/query-client';
@@ -48,5 +48,5 @@ export function RootNavigator() {
   if (bootstrapStatus !== 'ready') return <Splash />;
   if (!accessToken) return <AuthFlow />;
   if (user && !user.onboarding_completed) return <OnboardingPlaceholderScreen />;
-  return <HomePlaceholderScreen />;
+  return <MainTabs />;
 }
