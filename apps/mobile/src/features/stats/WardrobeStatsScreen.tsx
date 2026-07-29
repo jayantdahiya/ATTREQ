@@ -24,12 +24,7 @@ import {
   outfitCountLabel,
   wornSubtitle,
 } from '@/features/stats/statsFormat';
-import type {
-  CostPerWearEntry,
-  ForgottenItemEntry,
-  WardrobeStatsResponse,
-  WornItemEntry,
-} from '@/lib/api/types';
+import type { CostPerWearEntry, ForgottenItemEntry, WornItemEntry } from '@/lib/api/types';
 
 const TONE_FOR_BUCKET: Record<string, GarmentTone> = {
   all: 'top',

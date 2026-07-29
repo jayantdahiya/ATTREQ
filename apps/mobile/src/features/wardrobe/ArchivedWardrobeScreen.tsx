@@ -14,7 +14,7 @@ export function ArchivedWardrobeScreen({ onBack, onOpenItem }: { onBack: () => v
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isLoading } = useWardrobeItems('archived');
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const rows = useMemo(() => {
     const out: (typeof items)[] = [];
     for (let i = 0; i < items.length; i += 2) out.push(items.slice(i, i + 2));

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { useTheme } from '@/design-system/theme/ThemeProvider';
@@ -67,6 +67,7 @@ function CaptureTile({
 export function WardrobeCaptureScreen({ c, onFinish }: { c: OnboardingController; onFinish: () => void }) {
   const t = useTheme();
   const atCap = c.capturePhotos.length >= MAX_CAPTURE_PHOTOS;
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   useEffect(() => {
     void c.refreshWardrobeCount();
@@ -74,8 +75,13 @@ export function WardrobeCaptureScreen({ c, onFinish }: { c: OnboardingController
   }, []);
 
   const captureFromCamera = async () => {
-    const asset = await pickFromCamera();
-    if (asset) c.addCapturePhotos([asset]);
+    setCameraError(null);
+    try {
+      const asset = await pickFromCamera();
+      if (asset) c.addCapturePhotos([asset]);
+    } catch (e) {
+      setCameraError(e instanceof Error ? e.message : 'Could not open the camera.');
+    }
   };
 
   const pickFromLibrary = async () => {
@@ -169,6 +175,11 @@ export function WardrobeCaptureScreen({ c, onFinish }: { c: OnboardingController
         {progressLine}
       </MonoLabel>
 
+      {cameraError ? (
+        <BodyText size={13} color={t.colors.clay} style={{ marginBottom: 12 }}>
+          {cameraError}
+        </BodyText>
+      ) : null}
       {c.captureState === 'failed' && c.captureError ? (
         <BodyText size={13} color={t.colors.clay} style={{ marginBottom: 12 }}>
           {c.captureError}

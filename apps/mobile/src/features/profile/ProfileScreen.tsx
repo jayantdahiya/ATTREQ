@@ -26,6 +26,7 @@ import { authApi } from '@/lib/api/auth';
 import { queryKeys } from '@/lib/query/query-client';
 import { getReminderEnabled, saveReminderEnabled } from '@/lib/storage/secure-store';
 import { useAuthStore } from '@/store/auth-store';
+import { useBackHandler } from '@/lib/hooks/useBackHandler';
 
 type Screen = 'main' | 'style-dna' | 'stats' | 'how-it-works';
 
@@ -68,6 +69,15 @@ export function ProfileScreen() {
     setReminderEnabled(next);
     void saveReminderEnabled(next);
   };
+
+  // Hardware back mirrors the on-screen back on sub-screens; at the hub (tab
+  // root) fall through to the default (exit). Modal sheets register their own
+  // BackHandler while visible and, being registered later, win over this one.
+  useBackHandler(() => {
+    if (screen === 'main') return false;
+    setScreen('main');
+    return true;
+  });
 
   if (screen === 'style-dna') return <StyleDnaProfileScreen onBack={() => setScreen('main')} />;
   if (screen === 'stats') return <WardrobeStatsScreen onBack={() => setScreen('main')} />;

@@ -23,10 +23,11 @@ export function WardrobeScreen({
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<WardrobeFilter>('all');
+  const [pickError, setPickError] = useState<string | null>(null);
   const { data, isLoading, refetch, isRefetching } = useWardrobeItems('active');
   const upload = useUploadItem();
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data]);
   const filtered = useMemo(() => items.filter((i) => matchesFilter(filter, i.category)), [items, filter]);
   const rows = useMemo(() => {
     const out: (typeof filtered)[] = [];
@@ -35,8 +36,13 @@ export function WardrobeScreen({
   }, [filtered]);
 
   const addFrom = async (source: 'camera' | 'library') => {
-    const asset = await (source === 'camera' ? pickFromCamera() : pickFromLibrary());
-    if (asset) upload.mutate(asset);
+    setPickError(null);
+    try {
+      const asset = await (source === 'camera' ? pickFromCamera() : pickFromLibrary());
+      if (asset) upload.mutate(asset);
+    } catch (e) {
+      setPickError(e instanceof Error ? e.message : 'Could not open the camera.');
+    }
   };
 
   const UploadTile = ({ icon, label, onPress }: { icon: 'camera' | 'image'; label: string; onPress: () => void }) => (
@@ -87,6 +93,11 @@ export function WardrobeScreen({
           <UploadTile icon="camera" label={upload.isPending ? 'Uploading…' : 'Camera'} onPress={() => addFrom('camera')} />
           <UploadTile icon="image" label={upload.isPending ? 'Uploading…' : 'Library'} onPress={() => addFrom('library')} />
         </View>
+        {pickError ? (
+          <BodyText size={13} color={t.colors.clay}>
+            {pickError}
+          </BodyText>
+        ) : null}
 
         {/* Category chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>

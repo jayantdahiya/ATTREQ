@@ -15,6 +15,7 @@ import { AttreqIcon } from '@/design-system/icons/AttreqIcon';
 import { useAuthStore, type RegistrationData } from '@/store/auth-store';
 import { requestDeviceLocation, type DeviceLocation } from '@/lib/location/location';
 import { describeAuthError } from '@/lib/api/errors';
+import { useBackHandler } from '@/lib/hooks/useBackHandler';
 
 const STYLE_OPTIONS = ['Minimal', 'Earthy', 'Tailored', 'Layered', 'Casual', 'Formal', 'Streetwear', 'Athleisure'];
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -61,6 +62,14 @@ export function RegisterScreen({ onSignIn, onExit }: { onSignIn: () => void; onE
     if (step > 0) setStep(step - 1);
     else onExit();
   };
+
+  // Hardware back mirrors the on-screen chevron: previous step, or back to the
+  // sign-in screen from step 0. The auth stack root (LoginScreen) keeps the
+  // default behaviour (exit).
+  useBackHandler(() => {
+    onBack();
+    return true;
+  });
 
   const onNext = () => {
     if (step === 0) {
