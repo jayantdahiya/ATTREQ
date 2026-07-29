@@ -1,0 +1,103 @@
+appId: com.attreq.mobile
+# EMAIL / PASSWORD provided at run time via `maestro test -e EMAIL=... -e PASSWORD=...`.
+# The seeded user MUST have a saved location (saved_latitude/longitude, from the
+# A1 Location step) AND >=1 top + >=1 bottom wardrobe item — otherwise
+# GET /recommendations/daily answers 400 (no location) or 404 (insufficient
+# wardrobe) and Today shows the failed/empty state instead of a look.
+---
+# A4 Today / outfits smoke: log in → Today renders greeting + weather +
+# recommendation w/ explanation → wear a look → skip a look (rejection sheet) →
+# open the swipe deck and rate → History shows a worn entry.
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn:
+    id: 'login-email'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+
+# Lands on the tab shell, Today tab is the default.
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: 'today-screen'
+    timeout: 15000
+
+# Greeting + weather strip render.
+- assertVisible: 'Good.*'
+- extendedWaitUntil:
+    visible:
+      id: 'weather-strip'
+    timeout: 15000
+
+# A recommendation with its one-line explanation loads.
+- extendedWaitUntil:
+    visible:
+      id: 'label-explanation'
+    timeout: 25000
+- assertVisible:
+    id: 'today-wear-cta'
+
+# Wear the current look (POST /outfits -> /wear -> advance).
+- tapOn:
+    id: 'action-wear'
+- extendedWaitUntil:
+    visible:
+      id: 'today-wear-cta'
+    timeout: 15000
+
+# Skip the next look -> rejection reason sheet -> pick a reason -> submit.
+- tapOn:
+    id: 'action-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'rejection-sheet'
+    timeout: 10000
+- tapOn:
+    id: 'reason-too_formal'
+- tapOn:
+    id: 'rejection-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'today-screen'
+    timeout: 10000
+
+# Open the swipe deck and rate one look. The entry card is below the fold, so
+# scroll to it first; one rating proves the deck feeds feedback (a small seeded
+# wardrobe may yield a single-card deck).
+- scrollUntilVisible:
+    element:
+      id: 'swipe-deck-entry'
+    direction: DOWN
+- tapOn:
+    id: 'swipe-deck-entry'
+- extendedWaitUntil:
+    visible:
+      id: 'swipe-deck'
+    timeout: 20000
+- tapOn:
+    id: 'swipe-deck-like'
+- tapOn:
+    id: 'swipe-deck-close'
+- extendedWaitUntil:
+    visible:
+      id: 'today-screen'
+    timeout: 10000
+
+# History tab shows a tracked/worn entry.
+- tapOn: 'HISTORY'
+- extendedWaitUntil:
+    visible:
+      id: 'history-screen'
+    timeout: 15000
+- extendedWaitUntil:
+    visible: 'Worn'
+    timeout: 20000

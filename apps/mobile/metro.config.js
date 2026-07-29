@@ -1,6 +1,20 @@
-const { getDefaultConfig } = require('expo/metro-config')
-const { withNativeWind } = require('nativewind/metro')
+const path = require('path');
+const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 
-const config = getDefaultConfig(__dirname)
+// Monorepo/workspace-aware: deps are hoisted to the repo-root node_modules, so Metro
+// must watch it and resolve modules from both the app and the workspace root.
+const projectRoot = __dirname;
+const workspaceRoot = path.resolve(projectRoot, '../..');
 
-module.exports = withNativeWind(config, { input: './global.css' })
+/** @type {import('@react-native/metro-config').MetroConfig} */
+const config = {
+  watchFolders: [workspaceRoot],
+  resolver: {
+    nodeModulesPaths: [
+      path.resolve(projectRoot, 'node_modules'),
+      path.resolve(workspaceRoot, 'node_modules'),
+    ],
+  },
+};
+
+module.exports = mergeConfig(getDefaultConfig(projectRoot), config);

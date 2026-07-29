@@ -1,0 +1,72 @@
+appId: com.attreq.mobile
+---
+# A3 onboarding smoke: register a fresh account, run the full onboarding shell via
+# the Skip path (photo pickers are native — not Maestro-drivable), reach the tabs,
+# and confirm the Style DNA row renders in Profile.
+- evalScript: ${output.email = 'a3_' + new Date().getTime() + '@example.com'}
+- evalScript: ${output.password = 'Password123'}
+
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+
+# Register (3-step wizard)
+- tapOn: 'Create account'
+- assertVisible: 'Step 01 — Account'
+- tapOn:
+    id: 'register-email'
+- inputText: ${output.email}
+- tapOn:
+    id: 'register-fullname'
+- inputText: 'A3 Tester'
+- tapOn:
+    id: 'register-password'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-confirm'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-continue-account'
+- assertVisible: 'Step 02 — Style'
+- tapOn:
+    id: 'register-continue-style'
+- assertVisible: 'Step 03 — Location'
+- tapOn:
+    id: 'register-city'
+- inputText: 'New York'
+- hideKeyboard
+- tapOn:
+    id: 'register-submit'
+
+# Onboarding: Style DNA upload → Skip → wardrobe capture → selfie → complete
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-upload-screen'
+    timeout: 25000
+- tapOn:
+    id: 'onboarding-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'capture-screen'
+    timeout: 15000
+- tapOn:
+    id: 'capture-continue'
+- extendedWaitUntil:
+    visible:
+      id: 'selfie-screen'
+    timeout: 15000
+- tapOn:
+    id: 'selfie-skip'
+
+# Lands on the tab shell
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+
+# Style DNA row renders in Profile
+- tapOn: 'PROFILE'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-style-dna-row'
+    timeout: 15000

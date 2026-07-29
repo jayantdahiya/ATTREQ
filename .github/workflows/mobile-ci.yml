@@ -2,7 +2,7 @@ name: Mobile CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, android-native]
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile-ci.yml'
@@ -14,7 +14,6 @@ on:
 jobs:
   typecheck-and-test:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -34,3 +33,30 @@ jobs:
       - name: Run tests
         run: npm test -- --passWithNoTests
         working-directory: apps/mobile
+
+  android-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gradle assembleDebug
+        run: ./gradlew :app:assembleDebug --no-daemon
+        working-directory: apps/mobile/android

@@ -1,0 +1,63 @@
+appId: com.attreq.mobile
+# EMAIL / PASSWORD are provided at run time via `maestro test -e EMAIL=... -e PASSWORD=...`
+# (a seeded, onboarded user with one uploaded item).
+---
+# A2 wardrobe smoke: log in as a seeded (onboarded, has 1 uploaded item) user,
+# verify the item displays, open its detail, archive it, and see it in Archived.
+# The item is seeded via the API before this flow runs (native picker can't be
+# driven by Maestro); the app's own upload path is the same axios multipart.
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn:
+    id: 'login-email'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+
+# Lands on the tab shell → Wardrobe
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-screen'
+    timeout: 15000
+
+# Seeded item card is displayed
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-item-card'
+    timeout: 20000
+- tapOn:
+    id: 'wardrobe-item-card'
+
+# Detail → archive
+- extendedWaitUntil:
+    visible:
+      id: 'item-detail-screen'
+    timeout: 15000
+- tapOn:
+    id: 'archive-toggle'
+
+# Back on the list (item left the active grid)
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-screen'
+    timeout: 15000
+
+# Archived view shows the archived item
+- tapOn: 'Archived'
+- extendedWaitUntil:
+    visible:
+      id: 'archived-screen'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: 'wardrobe-item-card'
+    timeout: 20000

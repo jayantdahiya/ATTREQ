@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -7,7 +7,7 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
     },
   },
-})
+});
 
 export const queryKeys = {
   me: ['me'] as const,
@@ -15,4 +15,5 @@ export const queryKeys = {
   outfits: ['outfits'] as const,
   recommendations: (paramsKey: string) => ['recommendations', paramsKey] as const,
   styleDna: ['style-dna'] as const,
-}
+  stats: ['stats'] as const,
+};

@@ -1,195 +1,474 @@
+// API types — regenerated against the current backend schemas
+// (apps/api/src/attreq_api/schemas). Grown per-milestone; A1 covers auth + user.
+
 export interface User {
-  id: string
-  email: string
-  full_name: string | null
-  location: string | null
-  saved_latitude: number | null
-  saved_longitude: number | null
-  saved_city: string | null
-  is_active: boolean
-  is_verified: boolean
-  created_at: string
-  updated_at: string
-  last_login: string | null
-  oauth_provider: string | null
-  style_preferences: string | null
-  onboarding_completed: boolean
-  onboarding_step: string | null
+  id: string;
+  email: string;
+  full_name: string | null;
+  location: string | null;
+  saved_latitude: number | null;
+  saved_longitude: number | null;
+  saved_city: string | null;
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+  last_login: string | null;
+  oauth_provider: string | null;
+  style_preferences: string | null;
+  onboarding_completed: boolean;
+  onboarding_step: string | null;
 }
 
 export interface AuthResponse {
-  access_token: string
-  refresh_token: string
-  token_type: string
-  user: User
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: User;
+}
+
+// ── Wardrobe (A2) — mirrors apps/api schemas/wardrobe.py ──────────────────────
+
+export type WardrobeItemStatus = 'active' | 'archived';
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface PaletteColor {
+  lab: [number, number, number];
+  hex: string;
+  share: number;
+  is_neutral: boolean;
+  name: string;
+}
+
+export interface WardrobeItemPhoto {
+  id: string;
+  original_image_url: string;
+  processed_image_url: string | null;
+  thumbnail_url: string | null;
+  is_primary: boolean;
+  created_at: string;
 }
 
 export interface WardrobeItem {
-  id: string
-  user_id: string
-  original_image_url: string
-  processed_image_url: string | null
-  thumbnail_url: string | null
-  category: string | null
-  color_primary: string | null
-  color_secondary: string | null
-  pattern: string | null
-  season: string[] | null
-  occasion: string[] | null
-  detection_confidence: number | null
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed'
-  wear_count: number
-  last_worn: string | null
-  created_at: string
-  updated_at: string
+  id: string;
+  user_id: string;
+  category: string | null;
+  color_primary: string | null;
+  color_secondary: string | null;
+  pattern: string | null;
+  season: string[] | null;
+  occasion: string[] | null;
+  original_image_url: string;
+  processed_image_url: string | null;
+  thumbnail_url: string | null;
+  detection_confidence: number | null;
+  classification_source: string | null;
+  processing_status: ProcessingStatus;
+  status: WardrobeItemStatus;
+  purchase_price: number | null;
+  brand: string | null;
+  wear_count: number;
+  last_worn: string | null;
+  created_at: string;
+  updated_at: string;
+  // Detail-only (present on GET /items/{id}); absent in list entries.
+  photos?: WardrobeItemPhoto[];
+  // Classifier schema v2 (RI-2) — optional.
+  texture?: string | null;
+  silhouette?: string | null;
+  neckline?: string | null;
+  sleeve_length?: string | null;
+  statement_level?: string | null;
+  llm_formality?: number | null;
+  is_fullbody?: boolean;
+  color_palette?: PaletteColor[] | null;
+  schema_version?: number;
+  possible_duplicate_of?: string | null;
+  needs_review?: boolean;
+  review_reason?: string | null;
 }
 
 export interface WardrobeListResponse {
-  items: WardrobeItem[]
-  total: number
-  page: number
-  page_size: number
-  total_pages: number
+  items: WardrobeItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export interface WardrobeUploadResponse {
-  id: string
-  status: string
-  message: string
-  original_image_url: string
+  id: string;
+  status: string;
+  message: string;
+  original_image_url: string;
 }
 
-export interface WeatherData {
-  temp: number
-  feels_like: number
-  condition: string
-  description: string
-  humidity: number
-  wind_speed: number
-  icon: string
+export interface WardrobeItemUpdatePayload {
+  category?: string | null;
+  color_primary?: string | null;
+  color_secondary?: string | null;
+  pattern?: string | null;
+  season?: string[] | null;
+  occasion?: string[] | null;
+  purchase_price?: number | null;
+  brand?: string | null;
+  texture?: string | null;
+  silhouette?: string | null;
+  neckline?: string | null;
+  sleeve_length?: string | null;
+  statement_level?: string | null;
+  is_fullbody?: boolean | null;
 }
 
-export interface OutfitItemDetail {
-  id: string
-  category: string | null
-  color_primary: string | null
-  pattern: string | null
-  image_url: string | null
-  thumbnail_url: string | null
-}
-
-export interface OutfitScores {
-  color_harmony: number
-  formality: number
-  preference_bonus: number
-  style_dna: number
-  behaviour: number
-  total: number
-}
-
-// ─── Style DNA ───────────────────────────────────────────────────────────────
-
-export interface StyleDnaColorPalette {
-  dominant: string[]
-  accent: string[]
-  avoids: string[]
-  confidence: number
-}
+// ── Style DNA (A3) — mirrors apps/api schemas/style_dna.py + iOS Core/Models/StyleDna.swift ──
+//
+// The backend stores `style_dna` as `dict[str, Any]` (the synthesis LLM's raw
+// output), so the concrete shape is only a convention — the interface below is
+// permissive (every section optional, plus an index signature) and must never
+// be relied on to fully decode. The known section shapes come from the
+// synthesis prompt (services/style_dna/prompts.py) and StyleDna.swift; JSON
+// keys are the backend's snake_case form (`color_palette`, `formality_bias`,
+// `personal_color`, `behaviour_weights`).
 
 export interface StyleDnaAesthetic {
-  primary: string
-  secondary: string[]
-  confidence: number
+  primary: string;
+  secondary: string[];
+  confidence: number;
 }
 
+export interface StyleDnaColorPalette {
+  dominant: string[];
+  accent: string[];
+  avoids: string[];
+  confidence: number;
+}
+
+export interface StyleDnaPatterns {
+  preferred: string[];
+  confidence: number;
+}
+
+export interface StyleDnaSilhouette {
+  /** slim-fitted|relaxed-fitted|oversized|structured|draped|tailored|mixed */
+  preference: string;
+  confidence: number;
+}
+
+export interface StyleDnaFormalityBias {
+  /** 0.0–3.0 weighted average (0 = athletic … 3 = formal). */
+  level: number;
+  /** athletic|casual|smart-casual|business|formal */
+  label: string;
+  confidence: number;
+}
+
+export interface StyleDnaOccasions {
+  primary: string[];
+  confidence: number;
+}
+
+/**
+ * RI-3 `personal_color` — two continuous axes estimated from an optional,
+ * opt-in selfie (never a self-declared "season"). Both `[-1, 1]`
+ * (+1 = deep/warm, -1 = light/cool); `confidence` is `[0, 1]`. Absent until
+ * the user completes `POST /users/style-dna/selfie` at least once.
+ */
+export interface PersonalColor {
+  undertone_warm_cool: number;
+  depth_light_deep: number;
+  confidence: number;
+}
+
+/** Loose Style DNA profile — every section optional; extra keys tolerated. */
 export interface StyleDna {
-  aesthetic: StyleDnaAesthetic
-  color_palette: StyleDnaColorPalette
-  patterns: { preferred: string[]; confidence: number }
-  silhouette: { preference: string; confidence: number }
-  formality_bias: { level: number; label: string; confidence: number }
-  occasions: { primary: string[]; confidence: number }
-  behaviour_weights: Record<string, Record<string, number>>
+  aesthetic?: StyleDnaAesthetic;
+  color_palette?: StyleDnaColorPalette;
+  patterns?: StyleDnaPatterns;
+  silhouette?: StyleDnaSilhouette;
+  formality_bias?: StyleDnaFormalityBias;
+  occasions?: StyleDnaOccasions;
+  behaviour_weights?: Record<string, Record<string, number>>;
+  personal_color?: PersonalColor;
+  [key: string]: unknown;
 }
 
 export interface StyleDnaPhoto {
-  id: string
-  user_id: string
-  file_path: string
-  file_url: string
-  quality_ok: boolean
-  quality_reason: string | null
-  per_photo_extraction: Record<string, unknown> | null
-  created_at: string
+  id: string;
+  user_id: string;
+  file_path: string;
+  file_url: string;
+  quality_ok: boolean;
+  quality_reason: string | null;
+  per_photo_extraction: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface StyleDnaUploadResponse {
-  photos_processed: number
-  photos_skipped: number
-  wardrobe_items_seeded: number
-  style_dna: StyleDna | null
-  photos: StyleDnaPhoto[]
+  photos_processed: number;
+  photos_skipped: number;
+  wardrobe_items_seeded: number;
+  style_dna: StyleDna | null;
+  photos: StyleDnaPhoto[];
 }
 
 export interface StyleDnaProfileResponse {
-  style_dna: StyleDna | null
-  photos: StyleDnaPhoto[]
+  style_dna: StyleDna | null;
+  photos: StyleDnaPhoto[];
 }
 
+/** PATCH /users/style-dna body — deep-merged server-side (snake_case keys). */
 export interface StyleDnaCorrection {
-  corrections: Partial<StyleDna>
+  corrections: Record<string, unknown>;
 }
 
-export interface DetectedWardrobeItem {
-  category: string
-  subcategory: string
-  color_primary: string | null
-  color_secondary: string | null
-  pattern: string | null
-  occasion: string[]
-  season: string[]
-  confidence: number
-  bounding_region: string
+// ── Today / recommendations & outfits (A4) — mirrors apps/api schemas/
+// {recommendation,outfit,telemetry}.py. snake_case throughout (no client-side
+// case transform). ────────────────────────────────────────────────────────
+
+export interface WeatherData {
+  temp: number;
+  feels_like: number;
+  condition: string;
+  description: string;
+  humidity: number;
+  wind_speed: number;
+  icon: string;
+}
+
+/** Slot item detail carried inside an OutfitSuggestion (already-resolved URLs). */
+export interface OutfitItemDetail {
+  id: string;
+  category: string | null;
+  color_primary: string | null;
+  pattern: string | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+}
+
+/** Scoring breakdown — only `total` is guaranteed; everything else optional. */
+export interface OutfitScores {
+  color_harmony?: number;
+  color_harmony_branch?: string | null;
+  formality?: number;
+  preference_bonus?: number;
+  style_dna?: number | null;
+  behaviour?: number | null;
+  base_compatibility?: number;
+  cold_start_bonus?: number;
+  rediscovery_bonus?: number;
+  rotation_penalty?: number;
+  centroid?: number | null;
+  propagation_adjustment?: number | null;
+  total: number;
 }
 
 export interface OutfitSuggestion {
-  top_item_id: string
-  top_item: OutfitItemDetail
-  bottom_item_id: string
-  bottom_item: OutfitItemDetail
-  accessory_item: OutfitItemDetail | null
-  scores: OutfitScores
-  weather_context: WeatherData
-  occasion_context: string
+  top_item_id: string | null;
+  top_item: OutfitItemDetail | null;
+  bottom_item_id: string | null;
+  bottom_item: OutfitItemDetail | null;
+  fullbody_item_id: string | null;
+  fullbody_item: OutfitItemDetail | null;
+  footwear_item_id: string | null;
+  footwear_item: OutfitItemDetail | null;
+  outerwear_item_id: string | null;
+  outerwear_item: OutfitItemDetail | null;
+  accessory_item: OutfitItemDetail | null;
+  scores: OutfitScores;
+  weather_context: WeatherData;
+  occasion_context: string;
+  outfit_index: number;
+  explanation: string;
+  confidence: 'low' | 'normal';
+  rediscovery: boolean;
+  rediscovery_item_id: string | null;
+  rationale?: string | null;
 }
 
 export interface DailySuggestionsResponse {
-  suggestions: OutfitSuggestion[]
-  total_suggestions: number
-  generated_at: string
-  weather: WeatherData
-  occasion: string
-  cached: boolean
+  recommendation_id: string;
+  suggestions: OutfitSuggestion[];
+  total_suggestions: number;
+  generated_at: string;
+  weather: WeatherData;
+  occasion: string;
+  cached: boolean;
+}
+
+export interface SwipeDeckStatusResponse {
+  ratings_today: number;
+  cap: number;
+}
+
+/** Fixed rejection-reason vocabulary — mirrors backend RejectionReason. */
+export type RejectionReason =
+  | 'too_formal'
+  | 'too_casual'
+  | 'dont_like_combo'
+  | 'weather_wrong'
+  | 'wore_recently'
+  | 'dislike_item'
+  | 'other';
+
+export type RecommendationFeedbackAction = 'accepted' | 'rejected' | 'swapped';
+
+/** Body for POST /recommendations/{id}/feedback. */
+export interface RecommendationFeedbackPayload {
+  outfit_index: number;
+  action: RecommendationFeedbackAction;
+  rejection_reason?: RejectionReason | null;
+  rejection_note?: string | null;
+}
+
+// ── Outfits (diary) — mirrors apps/api schemas/outfit.py ──────────────────────
+
+/** POST /outfits body. accessory_ids sent as [] (never omitted) per RN parity. */
+export interface OutfitCreatePayload {
+  top_item_id?: string | null;
+  bottom_item_id?: string | null;
+  accessory_ids?: string[] | null;
+  occasion_context?: string | null;
+  footwear_item_id?: string | null;
+  outerwear_item_id?: string | null;
+  fullbody_item_id?: string | null;
 }
 
 export interface Outfit {
-  id: string
-  user_id: string
-  top_item_id: string | null
-  bottom_item_id: string | null
-  accessory_ids: string[] | null
-  occasion_context: string | null
-  worn_date: string | null
-  feedback_score: number | null
-  weather_context: Record<string, unknown> | null
-  created_at: string
-  updated_at: string
+  id: string;
+  user_id: string;
+  top_item_id: string | null;
+  bottom_item_id: string | null;
+  accessory_ids: string[] | null;
+  occasion_context: string | null;
+  footwear_item_id: string | null;
+  outerwear_item_id: string | null;
+  fullbody_item_id: string | null;
+  worn_date: string | null;
+  feedback_score: number | null;
+  weather_context: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface OutfitListResponse {
-  items: Outfit[]
-  total: number
-  page: number
-  page_size: number
-  total_pages: number
+export interface OutfitList {
+  items: Outfit[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+// ── Wardrobe stats & forgotten items (A5) — mirrors apps/api schemas/stats.py
+// + iOS Core/Models/WardrobeStats.swift. Both payloads are computed over ACTIVE
+// items only. `generated_at` is a date-only string, not a timestamp. snake_case.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface CategoryBreakdown {
+  category: string;
+  count: number;
+}
+
+export interface ColorFamilyBreakdown {
+  /** neutral | warm | cool | other | unknown */
+  family: string;
+  count: number;
+}
+
+export interface BrandBreakdown {
+  /** "Unbranded" when the item has no brand set. */
+  brand: string;
+  count: number;
+}
+
+/** A single entry in the most/least-worn lists. `wear_count` = "worn in N
+ * outfits" (distinct worn outfits containing the item), not a raw counter. */
+export interface WornItemEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  wear_count: number;
+  /** Date-only string ('YYYY-MM-DD'), null if never worn. */
+  last_worn: string | null;
+}
+
+/** Cost-per-wear entry — only present for items with a purchase price set.
+ * `cost_per_wear` is null when the item has a price but was never worn. */
+export interface CostPerWearEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  purchase_price: number;
+  wear_count: number;
+  cost_per_wear: number | null;
+}
+
+/** GET /stats/wardrobe — dashboard payload. */
+export interface WardrobeStatsResponse {
+  total_active_items: number;
+  by_category: CategoryBreakdown[];
+  by_color_family: ColorFamilyBreakdown[];
+  by_brand: BrandBreakdown[];
+  closet_value: number;
+  items_missing_price: number;
+  never_worn_count: number;
+  never_worn_percent: number;
+  most_worn: WornItemEntry[];
+  least_worn: WornItemEntry[];
+  cost_per_wear: CostPerWearEntry[];
+  worn_last_30_days: number;
+  worn_last_90_days: number;
+  /** Date-only string (backend `date.today().isoformat()`). */
+  generated_at: string;
+  cached: boolean;
+}
+
+/** Suggested pairing partner for a forgotten item ("wear it with…"). */
+export interface ForgottenPartner {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  score: number;
+}
+
+/** A single forgotten (never-worn or stale) wardrobe item. */
+export interface ForgottenItemEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  wear_count: number;
+  last_worn: string | null;
+  /** null for never-worn items (no "last worn" to measure from). */
+  days_since_worn: number | null;
+  /** null when the algorithm found no good pairing candidate. */
+  best_partner: ForgottenPartner | null;
+}
+
+/** GET /stats/forgotten — forgotten-items surface payload. */
+export interface ForgottenItemsResponse {
+  items: ForgottenItemEntry[];
+  count: number;
+  generated_at: string;
+  cached: boolean;
+}
+
+/**
+ * A wardrobe item detected inside a Style DNA outfit photo, flattened out of
+ * `photos[].per_photo_extraction.wardrobe_items_detected` (see
+ * features/onboarding/detected-items.ts). Advisory only on the client — the
+ * backend already seeded these during upload.
+ */
+export interface DetectedWardrobeItem {
+  category: string;
+  subcategory: string;
+  colorPrimary: string | null;
+  colorSecondary: string | null;
+  pattern: string | null;
+  occasion: string[];
+  season: string[];
+  confidence: number;
+  boundingRegion: string;
 }
