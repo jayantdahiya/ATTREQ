@@ -221,6 +221,143 @@ export interface StyleDnaCorrection {
   corrections: Record<string, unknown>;
 }
 
+// ── Today / recommendations & outfits (A4) — mirrors apps/api schemas/
+// {recommendation,outfit,telemetry}.py. snake_case throughout (no client-side
+// case transform). ────────────────────────────────────────────────────────
+
+export interface WeatherData {
+  temp: number;
+  feels_like: number;
+  condition: string;
+  description: string;
+  humidity: number;
+  wind_speed: number;
+  icon: string;
+}
+
+/** Slot item detail carried inside an OutfitSuggestion (already-resolved URLs). */
+export interface OutfitItemDetail {
+  id: string;
+  category: string | null;
+  color_primary: string | null;
+  pattern: string | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+}
+
+/** Scoring breakdown — only `total` is guaranteed; everything else optional. */
+export interface OutfitScores {
+  color_harmony?: number;
+  color_harmony_branch?: string | null;
+  formality?: number;
+  preference_bonus?: number;
+  style_dna?: number | null;
+  behaviour?: number | null;
+  base_compatibility?: number;
+  cold_start_bonus?: number;
+  rediscovery_bonus?: number;
+  rotation_penalty?: number;
+  centroid?: number | null;
+  propagation_adjustment?: number | null;
+  total: number;
+}
+
+export interface OutfitSuggestion {
+  top_item_id: string | null;
+  top_item: OutfitItemDetail | null;
+  bottom_item_id: string | null;
+  bottom_item: OutfitItemDetail | null;
+  fullbody_item_id: string | null;
+  fullbody_item: OutfitItemDetail | null;
+  footwear_item_id: string | null;
+  footwear_item: OutfitItemDetail | null;
+  outerwear_item_id: string | null;
+  outerwear_item: OutfitItemDetail | null;
+  accessory_item: OutfitItemDetail | null;
+  scores: OutfitScores;
+  weather_context: WeatherData;
+  occasion_context: string;
+  outfit_index: number;
+  explanation: string;
+  confidence: 'low' | 'normal';
+  rediscovery: boolean;
+  rediscovery_item_id: string | null;
+  rationale?: string | null;
+}
+
+export interface DailySuggestionsResponse {
+  recommendation_id: string;
+  suggestions: OutfitSuggestion[];
+  total_suggestions: number;
+  generated_at: string;
+  weather: WeatherData;
+  occasion: string;
+  cached: boolean;
+}
+
+export interface SwipeDeckStatusResponse {
+  ratings_today: number;
+  cap: number;
+}
+
+/** Fixed rejection-reason vocabulary — mirrors backend RejectionReason. */
+export type RejectionReason =
+  | 'too_formal'
+  | 'too_casual'
+  | 'dont_like_combo'
+  | 'weather_wrong'
+  | 'wore_recently'
+  | 'dislike_item'
+  | 'other';
+
+export type RecommendationFeedbackAction = 'accepted' | 'rejected' | 'swapped';
+
+/** Body for POST /recommendations/{id}/feedback. */
+export interface RecommendationFeedbackPayload {
+  outfit_index: number;
+  action: RecommendationFeedbackAction;
+  rejection_reason?: RejectionReason | null;
+  rejection_note?: string | null;
+}
+
+// ── Outfits (diary) — mirrors apps/api schemas/outfit.py ──────────────────────
+
+/** POST /outfits body. accessory_ids sent as [] (never omitted) per RN parity. */
+export interface OutfitCreatePayload {
+  top_item_id?: string | null;
+  bottom_item_id?: string | null;
+  accessory_ids?: string[] | null;
+  occasion_context?: string | null;
+  footwear_item_id?: string | null;
+  outerwear_item_id?: string | null;
+  fullbody_item_id?: string | null;
+}
+
+export interface Outfit {
+  id: string;
+  user_id: string;
+  top_item_id: string | null;
+  bottom_item_id: string | null;
+  accessory_ids: string[] | null;
+  occasion_context: string | null;
+  footwear_item_id: string | null;
+  outerwear_item_id: string | null;
+  fullbody_item_id: string | null;
+  worn_date: string | null;
+  feedback_score: number | null;
+  weather_context: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OutfitList {
+  items: Outfit[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 /**
  * A wardrobe item detected inside a Style DNA outfit photo, flattened out of
  * `photos[].per_photo_extraction.wardrobe_items_detected` (see

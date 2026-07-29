@@ -18,11 +18,16 @@ export type AttreqIconName =
   | 'check'
   | 'heart'
   | 'menu'
-  | 'x';
+  | 'x'
+  | 'arrowLeft'
+  | 'arrowRight'
+  | 'thumbsUp'
+  | 'thumbsDown';
 
 export const ATTREQ_ICON_NAMES: AttreqIconName[] = [
   'sun', 'shirt', 'book', 'person', 'camera', 'image', 'location', 'search',
   'bell', 'chevron', 'sparkles', 'back', 'check', 'heart', 'menu', 'x',
+  'arrowLeft', 'arrowRight', 'thumbsUp', 'thumbsDown',
 ];
 
 interface IconProps {
@@ -153,6 +158,34 @@ export function AttreqIcon({ name, size = 20, color = '#A8A29E', strokeWidth }: 
       return (
         <Svg {...common} strokeWidth={strokeWidth ?? 1.8}>
           <Path d="M18 6 6 18M6 6l12 12" />
+        </Svg>
+      );
+    case 'arrowLeft':
+      return (
+        <Svg {...common} strokeWidth={strokeWidth ?? 2}>
+          <Line x1="19" y1="12" x2="5" y2="12" />
+          <Path d="M12 19l-7-7 7-7" />
+        </Svg>
+      );
+    case 'arrowRight':
+      return (
+        <Svg {...common} strokeWidth={strokeWidth ?? 2}>
+          <Line x1="5" y1="12" x2="19" y2="12" />
+          <Path d="M12 5l7 7-7 7" />
+        </Svg>
+      );
+    case 'thumbsUp':
+      return (
+        <Svg {...common} strokeWidth={strokeWidth ?? 1.5}>
+          <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z" />
+          <Path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+        </Svg>
+      );
+    case 'thumbsDown':
+      return (
+        <Svg {...common} strokeWidth={strokeWidth ?? 1.5}>
+          <Path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z" />
+          <Path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" />
         </Svg>
       );
     default:

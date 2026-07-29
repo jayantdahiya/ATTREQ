@@ -12,16 +12,18 @@ export function BodyText({
   weight = 'regular',
   size = 14,
   style,
+  testID,
 }: {
   children: React.ReactNode;
   color?: string;
   weight?: Weight;
   size?: number;
   style?: StyleProp<TextStyle>;
+  testID?: string;
 }) {
   const t = useTheme();
   return (
-    <Text style={[body(size, weight), { lineHeight: size * 1.5, color: color ?? t.colors.t2 }, style]}>
+    <Text testID={testID} style={[body(size, weight), { lineHeight: size * 1.5, color: color ?? t.colors.t2 }, style]}>
       {children}
     </Text>
   );
