@@ -7,7 +7,7 @@ import { display } from '@/design-system/theme/typography';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { RegisterScreen } from '@/features/auth/RegisterScreen';
 import { MainTabs } from '@/navigation/MainTabs';
-import { OnboardingPlaceholderScreen } from '@/features/onboarding/OnboardingPlaceholderScreen';
+import { OnboardingFlow } from '@/features/onboarding/OnboardingFlow';
 import { authApi } from '@/lib/api/auth';
 import { queryKeys } from '@/lib/query/query-client';
 import { useAuthStore } from '@/store/auth-store';
@@ -47,6 +47,6 @@ export function RootNavigator() {
 
   if (bootstrapStatus !== 'ready') return <Splash />;
   if (!accessToken) return <AuthFlow />;
-  if (user && !user.onboarding_completed) return <OnboardingPlaceholderScreen />;
+  if (user && !user.onboarding_completed) return <OnboardingFlow />;
   return <MainTabs />;
 }

@@ -28,6 +28,23 @@ export const wardrobeApi = {
     });
     return response.data;
   },
+  // POST /wardrobe/batch-upload — multipart, repeated field `files`, up to
+  // `wardrobe_batch_upload_max_files` (20, RI-7). One bad image never fails the
+  // rest of the batch. Returns one WardrobeUploadResponse per uploaded item.
+  async batchUpload(assets: UploadAsset[]) {
+    const formData = new FormData();
+    assets.forEach((asset, i) => {
+      formData.append('files', {
+        uri: asset.uri,
+        name: asset.name || `garment-${i}.jpg`,
+        type: asset.type || 'image/jpeg',
+      } as never);
+    });
+    const response = await apiClient.post<WardrobeUploadResponse[]>('/wardrobe/batch-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
   async getItem(itemId: string) {
     const response = await apiClient.get<WardrobeItem>(`/wardrobe/items/${itemId}`);
     return response.data;

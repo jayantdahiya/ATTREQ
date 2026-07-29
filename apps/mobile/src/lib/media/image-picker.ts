@@ -23,3 +23,21 @@ export async function pickFromCamera(): Promise<UploadAsset | null> {
   if (result.didCancel || result.errorCode) return null;
   return toUploadAsset(result.assets?.[0]);
 }
+
+/**
+ * Multi-select from the photo library, capped at `max`. Returns [] if
+ * cancelled. Used by Style DNA upload (3–8 outfits) and batch wardrobe capture
+ * (up to 20 garments). `selectionLimit: 0` means unlimited in
+ * react-native-image-picker, so clamp to at least 1.
+ */
+export async function pickMultipleFromLibrary(max: number): Promise<UploadAsset[]> {
+  const result = await launchImageLibrary({
+    mediaType: 'photo',
+    quality: 0.9,
+    selectionLimit: Math.max(1, max),
+  });
+  if (result.didCancel || result.errorCode) return [];
+  return (result.assets ?? [])
+    .map(toUploadAsset)
+    .filter((a): a is UploadAsset => a !== null);
+}
