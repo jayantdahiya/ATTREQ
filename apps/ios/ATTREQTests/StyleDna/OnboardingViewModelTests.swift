@@ -343,4 +343,68 @@ struct OnboardingViewModelTests {
         }
         #expect(user.onboardingCompleted)
     }
+
+    // MARK: - Personal-color selfie (RI-3)
+
+    /// A successful analysis lands in `.done`.
+    @Test func estimatePersonalColorSucceedsAndLandsInDoneState() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.recordRequests { method, path in
+            if method == "POST", path == "/api/v1/users/style-dna/selfie" {
+                return (200, Data(#"{"style_dna":null,"photos":[]}"#.utf8))
+            }
+            return (404, Data())
+        }
+
+        let model = OnboardingViewModel()
+        #expect(model.personalColorState == .idle)
+
+        await model.estimatePersonalColor(
+            imageData: Data("selfie".utf8),
+            consent: true,
+            using: Self.makeRepository()
+        )
+
+        #expect(model.personalColorState == .done)
+        #expect(!model.isAnalyzingPersonalColor)
+    }
+
+    /// The endpoint is feature-flagged OFF by default (404) — this MUST NOT
+    /// throw out of the view model or otherwise block the onboarding flow;
+    /// it just lands in `.failed` so the view can still offer "Continue".
+    @Test func estimatePersonalColor404DegradesToFailedStateWithoutBlockingFlow() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.recordRequests { _, _ in
+            (404, Data(#"{"detail":"Personal-color selfie estimation is not enabled"}"#.utf8))
+        }
+
+        let model = OnboardingViewModel()
+
+        await model.estimatePersonalColor(
+            imageData: Data("selfie".utf8),
+            consent: true,
+            using: Self.makeRepository()
+        )
+
+        guard case .failed = model.personalColorState else {
+            Issue.record("Expected .failed after 404, got \(model.personalColorState)")
+            return
+        }
+
+        // The flow is never blocked by this failure: onboarding completion
+        // still succeeds independently of the selfie outcome.
+        let log = Self.recordRequests { method, path in
+            if method == "POST", path == "/api/v1/users/onboarding/complete" {
+                return (200, completedUserJSON)
+            }
+            return (404, Data())
+        }
+        let session = AppSession(
+            apiClient: Self.makeAPIClient(),
+            authSession: AuthSession(keychain: KeychainStore(), baseURL: Self.baseURL)
+        )
+        await model.skip(session: session)
+        #expect(log.withLock { $0 } == ["POST /api/v1/users/onboarding/complete"])
+        #expect(model.completionError == nil)
+    }
 }

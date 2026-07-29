@@ -2,17 +2,22 @@
 
 import asyncio
 import logging
-import tempfile
-from pathlib import Path
 from uuid import UUID
 
 from attreq_api.config.database import AsyncSessionLocal
+from attreq_api.config.settings import settings
 from attreq_api.crud.wardrobe import wardrobe_crud
-from attreq_api.services.ai.background_removal import background_removal_service
+from attreq_api.crud.wardrobe_photo import wardrobe_photo_crud
+from attreq_api.services.ai.background_removal import (
+    cleanup_classification_tempdir,
+    generate_processed_and_thumbnail,
+)
 from attreq_api.services.ai.clothing_detection import clothing_detection_service
+from attreq_api.services.ai.color_extraction import extract_palette_safe
 from attreq_api.services.ai.embeddings import weaviate_service
-from attreq_api.services.storage import get_storage
-from attreq_api.services.storage.base import get_file_extension
+from attreq_api.services.ai.fashion_embeddings import fashion_embeddings_service
+from attreq_api.services.ai.schema_mapper import build_wardrobe_update_payload
+from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +29,17 @@ async def process_wardrobe_image(
 
     This function orchestrates the complete AI processing pipeline:
     1. Update status to "processing"
-    2. Fetch original image bytes from storage into a temp workspace
-    3. Remove background from image
-    4. Generate thumbnail
-    5. Detect clothing attributes with the configured LLM classifier
-    6. Add to Weaviate for vector search
-    7. Update database with results
-    8. Set status to "completed" or "failed"
+    2. Remove background + generate thumbnail (shared, storage-agnostic helper)
+    3. Detect clothing attributes with the configured LLM classifier
+    3b. RI-6: compute a FashionCLIP image embedding (only if EMBEDDINGS_ENABLED)
+        — MUST happen before the temp-dir cleanup below, while
+        `classification_path` still exists on disk.
+    4. Add to Weaviate for vector search
+    4b. RI-6: upsert the FashionCLIP vector + near-duplicate check (uses the
+        vector computed in 3b, no file needed — safe to run after cleanup)
+    5. Update database with results
+    6. Invalidate the wardrobe-stats cache
+    7. Set status to "completed" or "failed"
 
     Args:
         item_id: UUID of the wardrobe item
@@ -42,65 +51,44 @@ async def process_wardrobe_image(
     """
     logger.info(f"Starting image processing for item {item_id}")
 
-    storage = get_storage()
-
     async with AsyncSessionLocal() as db:
         try:
             # Step 1: Update status to "processing"
             await wardrobe_crud.update_processing_status(db, item_id, "processing")
             logger.info(f"Item {item_id} status updated to processing")
 
-            # Step 2: Fetch original bytes into a temp workspace
-            # (rembg and the classifier are path-based)
-            original_bytes = await storage.get_file_bytes(original_image_ref)
-            extension = get_file_extension(original_image_ref)
+            # Step 2: Remove background + generate thumbnail (shared helper).
+            # `classification_path` lives in a temp dir we own and must clean
+            # up ourselves once classification is done.
+            classification_path, bg_removed_url, thumbnail_url = (
+                await generate_processed_and_thumbnail(
+                    original_image_ref, user_id, log_ref=f"item {item_id}"
+                )
+            )
+            # `bg_removed_url` is None iff background removal failed, in which
+            # case `classification_path` is `original_tmp`, not a
+            # background-removed image — pixel color extraction must not run
+            # against it (see color_extraction.py docstring).
+            bg_removal_succeeded = bg_removed_url is not None
+            # Background removal failed -> fall back to the already-stored
+            # original URL/key, never a freshly (and, for S3, presigned) one.
+            processed_image_url = bg_removed_url or original_image_url
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                original_tmp = str(Path(tmpdir) / f"original.{extension}")
-                await asyncio.to_thread(Path(original_tmp).write_bytes, original_bytes)
+            try:
+                # Step 3: Detect clothing attributes and extract the pixel
+                # color palette concurrently — a failure in one must not
+                # affect the other.
+                detect_coro = clothing_detection_service.detect_clothing(classification_path)
+                palette_coro = extract_palette_safe(
+                    classification_path if bg_removal_succeeded else None,
+                    log_ref=f"item {item_id}",
+                )
+                detection_outcome, palette_outcome = await asyncio.gather(
+                    detect_coro, palette_coro, return_exceptions=True
+                )
 
-                # Step 3: Remove background (rembg outputs PNG with alpha)
-                try:
-                    processed_tmp = str(Path(tmpdir) / "processed.png")
-                    await asyncio.to_thread(
-                        background_removal_service.remove_background,
-                        original_tmp,
-                        processed_tmp,
-                    )
-                    processed_bytes = await asyncio.to_thread(Path(processed_tmp).read_bytes)
-                    _, processed_image_url = await storage.save_image_from_bytes(
-                        processed_bytes, user_id, "processed", "png"
-                    )
-                    logger.info(f"Background removed for item {item_id}")
-                    classification_path = processed_tmp
-                    thumbnail_source, thumbnail_ext = processed_bytes, "png"
-
-                except Exception as e:
-                    logger.warning(f"Background removal failed for item {item_id}: {str(e)}")
-                    processed_image_url = original_image_url
-                    classification_path = original_tmp
-                    thumbnail_source, thumbnail_ext = original_bytes, extension
-
-                # Step 4: Generate thumbnail
-                try:
-                    _, thumbnail_url = await storage.generate_thumbnail(
-                        thumbnail_source, user_id, 300, thumbnail_ext
-                    )
-                    logger.info(f"Thumbnail generated for item {item_id}")
-                except Exception as e:
-                    logger.warning(f"Thumbnail generation failed for item {item_id}: {str(e)}")
-                    thumbnail_url = None
-
-                # Step 5: Detect clothing attributes
-                try:
-                    detection_result = await clothing_detection_service.detect_clothing(
-                        classification_path
-                    )
-                    logger.info(
-                        f"Clothing detection completed for item {item_id}: {detection_result}"
-                    )
-                except Exception as e:
-                    logger.error(f"Clothing detection failed for item {item_id}: {str(e)}")
+                if isinstance(detection_outcome, BaseException):
+                    logger.error(f"Clothing detection failed for item {item_id}: {str(detection_outcome)}")
                     detection_result = {
                         "category": None,
                         "color_primary": None,
@@ -111,8 +99,43 @@ async def process_wardrobe_image(
                         "detection_confidence": 0.0,
                         "processing_status": "failed",
                     }
+                else:
+                    detection_result = detection_outcome
+                    logger.info(
+                        f"Clothing detection completed for item {item_id}: {detection_result}"
+                    )
 
-            # Step 6: Add to Weaviate
+                # `extract_palette_safe` never raises — it degrades internally
+                # to (None, "llm_fallback"). `isinstance` check here is a
+                # defensive backstop only.
+                if isinstance(palette_outcome, BaseException):
+                    logger.error(f"Color extraction task errored for item {item_id}: {str(palette_outcome)}")
+                    palette, color_extraction_source = None, "llm_fallback"
+                else:
+                    palette, color_extraction_source = palette_outcome
+
+                # Step 3b: FashionCLIP embedding (RI-6) — MUST be computed here,
+                # inside the `try`, while `classification_path` still exists.
+                # The real fix for the confirmed temp-dir-scoping bug: the old
+                # code computed/used Weaviate state only after
+                # `cleanup_classification_tempdir` ran in `finally` below, by
+                # which point the file is gone. Best-effort: never raises,
+                # embedding failure must not fail the whole pipeline. Embeds
+                # even when background removal failed (classification_path ==
+                # original_tmp) — a noisier vector beats a coverage gap
+                # correlated with BG-removal failures.
+                item_vector: list[float] | None = None
+                if settings.embeddings_enabled:
+                    try:
+                        item_vector = await asyncio.to_thread(
+                            fashion_embeddings_service.embed_image, classification_path
+                        )
+                    except Exception as e:
+                        logger.warning(f"FashionCLIP embed failed for item {item_id}: {str(e)}")
+            finally:
+                cleanup_classification_tempdir(classification_path)
+
+            # Step 4: Add to Weaviate
             try:
                 if weaviate_service.is_connected():
                     weaviate_service.init_schema()
@@ -132,22 +155,54 @@ async def process_wardrobe_image(
             except Exception as e:
                 logger.error(f"Failed to add item {item_id} to Weaviate: {str(e)}")
 
-            update_data = {
-                "processed_image_url": processed_image_url,
-                "thumbnail_url": thumbnail_url,
-                "category": detection_result.get("category"),
-                "color_primary": detection_result.get("color_primary"),
-                "color_secondary": detection_result.get("color_secondary"),
-                "pattern": detection_result.get("pattern"),
-                "season": detection_result.get("season", []),
-                "occasion": detection_result.get("occasion", []),
-                "detection_confidence": detection_result.get("detection_confidence", 0.0),
-                "classification_source": detection_result.get("classification_source"),
-                "processing_status": "completed",
-            }
+            # Step 4b: upsert the FashionCLIP vector + near-duplicate check
+            # (RI-6). Uses the vector computed in 3b — no file access needed,
+            # so this is safe to run after the temp-dir cleanup above.
+            possible_duplicate_of = None
+            if item_vector is not None and weaviate_service.is_connected():
+                try:
+                    weaviate_service.init_vector_schema()
+                    # Near-dup check BEFORE upsert so this item never matches
+                    # itself. Only matches already-stored (completed) vectors
+                    # of the same user — two near-identical images uploaded
+                    # concurrently may miss each other (accepted v1 limitation).
+                    dup_neighbors = weaviate_service.query_neighbors(
+                        vector=item_vector,
+                        user_id=user_id,
+                        k=1,
+                        min_sim=0.97,
+                        exclude_item_id=item_id,
+                    )
+                    weaviate_service.upsert_vector(
+                        item_id=item_id,
+                        user_id=user_id,
+                        category=detection_result.get("category"),
+                        vector=item_vector,
+                    )
+                    if dup_neighbors:
+                        possible_duplicate_of = dup_neighbors[0][0]
+                except Exception as e:
+                    logger.warning(
+                        f"FashionCLIP vector upsert/dup-check failed for item {item_id}: {str(e)}"
+                    )
+
+            update_data = build_wardrobe_update_payload(
+                detection_result=detection_result,
+                palette=palette,
+                color_extraction_source=color_extraction_source,
+                processed_image_url=processed_image_url,
+                thumbnail_url=thumbnail_url,
+            )
+            if possible_duplicate_of is not None:
+                update_data["possible_duplicate_of"] = possible_duplicate_of
 
             await wardrobe_crud.update(db, item_id, update_data)
             logger.info(f"Item {item_id} processing completed successfully")
+
+            try:
+                await invalidate_wardrobe_stats_cache(user_id)
+            except Exception as e:
+                logger.warning(f"Failed to invalidate stats cache for user {user_id}: {str(e)}")
 
         except Exception as e:
             logger.error(f"Image processing failed for item {item_id}: {str(e)}")
@@ -157,3 +212,53 @@ async def process_wardrobe_image(
                 logger.error(
                     f"Failed to update status to 'failed' for item {item_id}: {str(update_error)}"
                 )
+
+
+async def process_wardrobe_item_photo(
+    photo_id: UUID, user_id: UUID, original_image_path: str
+) -> None:
+    """Process an additional photo attached to an existing wardrobe item.
+
+    Reuses the shared bg-removal + thumbnail pipeline only — no
+    re-classification and no Weaviate indexing, since the item's
+    classification is already established. The item still counts once in
+    stats regardless of how many photos it has, so no stats-cache
+    invalidation happens here.
+
+    Args:
+        photo_id: UUID of the wardrobe_item_photos row
+        user_id: UUID of the user who owns the item
+        original_image_path: Storage reference of the original uploaded
+            photo (local path or S3 object key)
+    """
+    logger.info(f"Starting photo processing for photo {photo_id}")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            classification_path, processed_image_url, thumbnail_url = (
+                await generate_processed_and_thumbnail(
+                    original_image_path, user_id, log_ref=f"photo {photo_id}"
+                )
+            )
+            cleanup_classification_tempdir(classification_path)
+
+            if processed_image_url is None:
+                # Background removal failed — fall back to the photo's
+                # already-persisted original URL rather than minting a new
+                # one (would be a presigned URL under the S3 backend).
+                existing_photo = await wardrobe_photo_crud.get_by_id(db, photo_id)
+                processed_image_url = (
+                    existing_photo.original_image_url if existing_photo else None
+                )
+
+            await wardrobe_photo_crud.update(
+                db,
+                photo_id,
+                {
+                    "processed_image_url": processed_image_url,
+                    "thumbnail_url": thumbnail_url,
+                },
+            )
+            logger.info(f"Photo {photo_id} processing completed successfully")
+        except Exception as e:
+            logger.error(f"Photo processing failed for photo {photo_id}: {str(e)}")

@@ -4,6 +4,7 @@ import Testing
 struct SmokeTests {
     @Test func designSystemTokensResolve() {
         #expect(GarmentTone.allCases.count == 5)
-        #expect(AttreqTab.allCases.count == 4)
+        // RI-7 added the Stats tab (today/wardrobe/stats/history/profile).
+        #expect(AttreqTab.allCases.count == 5)
     }
 }

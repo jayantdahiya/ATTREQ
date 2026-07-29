@@ -8,6 +8,10 @@ struct Outfit: Codable, Sendable, Equatable, Identifiable {
     let bottomItemId: String?
     let accessoryIds: [String]?
     let occasionContext: String?
+    /// RI-4 outfit slots (launch-M3 footwear/outerwear + the fullbody anchor).
+    let footwearItemId: String?
+    let outerwearItemId: String?
+    let fullbodyItemId: String?
     /// Date-only string, e.g. `"2026-07-12"` (backend `date | None` — not a timestamp).
     let wornDate: String?
     /// -1 (dislike), 0 (neutral), 1 (like).

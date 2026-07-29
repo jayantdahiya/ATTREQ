@@ -16,9 +16,17 @@ struct WardrobeScreen: View {
     /// Fired after a successful upload so the tab shell can invalidate the
     /// Profile Pieces stat.
     var onItemUploaded: (() -> Void)?
+    /// Fired after a successful archive/unarchive (from
+    /// `WardrobeItemDetailView`) so the tab shell can invalidate Today/Stats,
+    /// which change immediately on the server (RI-7).
+    var onItemStatusChanged: (() -> Void)?
 
     @State private var showCamera = false
     @State private var showLibrary = false
+    /// Archived-items entry point (RI-7) — pushed from the header's "Archived"
+    /// link; deep-links into `WardrobeItemDetailView`'s Unarchive action
+    /// rather than duplicating that control inline.
+    @State private var showArchived = false
 
     /// Width/height ratios cycled across the grid to echo the design's
     /// staggered masonry heights (col1 208/174/146, col2 172/190/186 at
@@ -26,30 +34,45 @@ struct WardrobeScreen: View {
     private static let tileAspectRatios: [CGFloat] = [0.77, 0.93, 0.92, 0.84, 1.10, 0.86]
 
     var body: some View {
-        ZStack {
-            Theme.bg.ignoresSafeArea()
+        // Own NavigationStack (like ProfileScreen) so grid cards can push
+        // `WardrobeItemDetailView` and the header link can push the archived view.
+        NavigationStack {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                    countLine
-                        .padding(.bottom, 12)
-                    chipsRow
-                        .padding(.bottom, 12)
-                    uploadTiles
-                        .padding(.bottom, 14)
-                    if let message = viewModel.errorMessage {
-                        errorBanner(message)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        header
+                        countLine
                             .padding(.bottom, 12)
+                        chipsRow
+                            .padding(.bottom, 12)
+                        uploadTiles
+                            .padding(.bottom, 14)
+                        if let message = viewModel.errorMessage {
+                            errorBanner(message)
+                                .padding(.bottom, 12)
+                        }
+                        gridSection
                     }
-                    gridSection
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+                    // Clearance for the floating tab bar.
+                    .padding(.bottom, 110)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 10)
-                // Clearance for the floating tab bar.
-                .padding(.bottom, 110)
+                .refreshable { await viewModel.refresh() }
             }
-            .refreshable { await viewModel.refresh() }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: String.self) { itemId in
+                WardrobeItemDetailView(
+                    itemId: itemId,
+                    repository: viewModel.repository,
+                    onStatusChanged: onItemStatusChanged
+                )
+            }
+            .navigationDestination(isPresented: $showArchived) {
+                ArchivedWardrobeView(repository: viewModel.repository)
+            }
         }
         .task {
             await viewModel.loadInitial()
@@ -91,6 +114,17 @@ struct WardrobeScreen: View {
                     .foregroundStyle(Theme.text)
             }
             Spacer()
+            // Archived-items entry point (RI-7).
+            Button {
+                showArchived = true
+            } label: {
+                MonoLabel("Archived", size: 9)
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 4)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 20)
+            .accessibilityIdentifier("link-archived-items")
             // Decorative search circle per artboard 06 — deliberately inert
             // (no search exists in the native port), so it's hidden from
             // assistive tech to avoid announcing a non-functional control.
@@ -226,10 +260,13 @@ struct WardrobeScreen: View {
     private func column(_ entries: [(offset: Int, element: WardrobeItem)]) -> some View {
         LazyVStack(alignment: .leading, spacing: 10) {
             ForEach(entries, id: \.element.id) { entry in
-                WardrobeItemCard(
-                    item: entry.element,
-                    imageAspectRatio: Self.tileAspectRatios[entry.offset % Self.tileAspectRatios.count]
-                )
+                NavigationLink(value: entry.element.id) {
+                    WardrobeItemCard(
+                        item: entry.element,
+                        imageAspectRatio: Self.tileAspectRatios[entry.offset % Self.tileAspectRatios.count]
+                    )
+                }
+                .buttonStyle(.plain)
                 .onAppear {
                     Task { await viewModel.loadMoreIfNeeded(currentItem: entry.element) }
                 }

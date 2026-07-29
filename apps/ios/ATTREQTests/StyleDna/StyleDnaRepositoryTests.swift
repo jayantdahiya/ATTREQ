@@ -104,6 +104,24 @@ private func profileResponseJSON(photoIDs: [String]) -> Data {
     return Data(#"{"style_dna":\#(styleDnaJSON),"photos":[\#(photos)]}"#.utf8)
 }
 
+/// Same shape as `styleDnaJSON` plus the RI-3 `personal_color` key the selfie
+/// endpoint merges in.
+private let styleDnaWithPersonalColorJSON = """
+{"aesthetic":{"primary":"minimalist","secondary":["classic","casual"],"confidence":0.82},\
+"color_palette":{"dominant":["navy","white"],"accent":["camel"],"avoids":["neon"],"confidence":0.78},\
+"patterns":{"preferred":["solid","stripe"],"confidence":0.7},\
+"silhouette":{"preference":"tailored","confidence":0.66},\
+"formality_bias":{"level":1.8,"label":"smart-casual","confidence":0.74},\
+"occasions":{"primary":["work","casual"],"confidence":0.71},\
+"behaviour_weights":{"category_likes":{"top":0.55}},\
+"personal_color":{"undertone_warm_cool":0.3,"depth_light_deep":-0.4,"confidence":0.82}}
+"""
+
+private func profileResponseWithPersonalColorJSON(photoIDs: [String]) -> Data {
+    let photos = photoIDs.map { photoJSON(id: $0) }.joined(separator: ",")
+    return Data(#"{"style_dna":\#(styleDnaWithPersonalColorJSON),"photos":[\#(photos)]}"#.utf8)
+}
+
 private func wardrobeItemJSON(id: String, category: String) -> String {
     """
     {"id":"\(id)","user_id":"u-1","original_image_url":"/uploads/style-dna/placeholder.jpg",\
@@ -403,5 +421,78 @@ struct StyleDnaRepositoryTests {
 
         #expect(user.onboardingCompleted)
         #expect(user.onboardingStep == "complete")
+    }
+
+    // MARK: Personal-color selfie (RI-3)
+
+    @Test func estimatePersonalColorEncodesFileAndConsentAndDecodesPersonalColor() async throws {
+        defer { Self.resetHandler() }
+        let captured = Self.capture(
+            status: 200,
+            body: profileResponseWithPersonalColorJSON(photoIDs: ["p-1"])
+        )
+
+        let response = try await Self.makeRepository().estimatePersonalColor(
+            imageData: Data("SELFIE-BYTES".utf8),
+            consent: true
+        )
+
+        let request = try #require(captured.withLock { $0 })
+        #expect(request.method == "POST")
+        #expect(request.path == "/api/v1/users/style-dna/selfie")
+
+        let contentType = try #require(request.contentType)
+        #expect(contentType.hasPrefix("multipart/form-data; boundary="))
+        let boundary = String(contentType.dropFirst("multipart/form-data; boundary=".count))
+        let bodyData = try #require(request.body)
+        let bodyText = try #require(String(data: bodyData, encoding: .utf8))
+
+        // Exactly 2 parts (file + consent) + the terminator.
+        let segments = bodyText.components(separatedBy: "--\(boundary)")
+        #expect(segments.count == 2 + 2)
+        #expect(bodyText.contains(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"selfie.jpg\""
+        ))
+        #expect(bodyText.contains("Content-Type: image/jpeg"))
+        #expect(bodyText.contains("SELFIE-BYTES"))
+        #expect(bodyText.contains("Content-Disposition: form-data; name=\"consent\""))
+        #expect(bodyText.contains("\r\n\r\ntrue\r\n"))
+
+        #expect(response.styleDna?.aesthetic.primary == "minimalist") // unrelated fields still decode
+        #expect(response.styleDna?.personalColor?.undertoneWarmCool == 0.3)
+        #expect(response.styleDna?.personalColor?.depthLightDeep == -0.4)
+        #expect(response.styleDna?.personalColor?.confidence == 0.82)
+    }
+
+    /// The endpoint is feature-flagged (404 when disabled) and 400s without
+    /// consent; both must surface as an ordinary `APIError`, never crash —
+    /// callers (`OnboardingViewModel`) are responsible for treating this as a
+    /// soft, non-blocking failure.
+    @Test func estimatePersonalColorSurfacesHTTPErrorsAsAPIError() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.capture(
+            status: 404,
+            body: Data(#"{"detail":"Personal-color selfie estimation is not enabled"}"#.utf8)
+        )
+
+        await #expect(throws: APIError.self) {
+            _ = try await Self.makeRepository().estimatePersonalColor(
+                imageData: Data("x".utf8),
+                consent: true
+            )
+        }
+    }
+
+    /// `StyleDna` without a `personal_color` key decodes it as `nil`, not a
+    /// decode failure — an absent optional key must not poison the rest of
+    /// the profile the way a missing REQUIRED field does.
+    @Test func profileWithoutPersonalColorKeyDecodesNilPersonalColor() async throws {
+        defer { Self.resetHandler() }
+        _ = Self.capture(status: 200, body: profileResponseJSON(photoIDs: ["p-1"]))
+
+        let response = try await Self.makeRepository().profile()
+
+        #expect(response.styleDna != nil)
+        #expect(response.styleDna?.personalColor == nil)
     }
 }

@@ -24,6 +24,8 @@ struct MainTabsView: View {
     /// Same lifecycle as `wardrobeViewModel` — suggestions/paging survive tab switches.
     @State private var todayViewModel: TodayViewModel?
     @State private var historyViewModel: HistoryViewModel?
+    /// Same lifecycle as the other tab models (RI-7 Stats tab).
+    @State private var statsViewModel: StatsViewModel?
     /// Shared by Today (wear/feedback writes) and History (reads) so both
     /// tabs hit the same store.
     @State private var outfitsRepository: OutfitsRepository?
@@ -31,6 +33,11 @@ struct MainTabsView: View {
     /// switches. Shares `outfitsRepository` so the Worn/Streak stats read the
     /// same store the Today tab writes to.
     @State private var profileViewModel: ProfileViewModel?
+    /// RI-7 trust screen, shown once automatically post-onboarding (see
+    /// `TrustScreenAutoShow`) — the tab shell is the first screen the user
+    /// lands on once onboarding completes, so this is where the one-time
+    /// check lives. Reachable anytime afterward from the Profile row.
+    @State private var showTrustScreenAutomatically = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -48,6 +55,9 @@ struct MainTabsView: View {
                 wardrobeViewModel = WardrobeViewModel(
                     repository: WardrobeRepository(apiClient: session.api)
                 )
+            }
+            if statsViewModel == nil {
+                statsViewModel = StatsViewModel(repository: StatsRepository(apiClient: session.api))
             }
             if todayViewModel == nil || historyViewModel == nil || profileViewModel == nil {
                 let outfits = outfitsRepository ?? OutfitsRepository(apiClient: session.api)
@@ -67,7 +77,28 @@ struct MainTabsView: View {
                     )
                 }
             }
+            if !TrustScreenAutoShow.hasShown() {
+                // Mark it shown immediately (not on dismiss) so a second
+                // `onAppear` firing before the sheet is dismissed — e.g. a
+                // fast tab switch — can't queue a duplicate presentation.
+                TrustScreenAutoShow.markShown()
+                showTrustScreenAutomatically = true
+            }
         }
+        .sheet(isPresented: $showTrustScreenAutomatically) {
+            NavigationStack {
+                HowRecommendationsWorkView(onDismiss: { showTrustScreenAutomatically = false })
+            }
+        }
+    }
+
+    /// Archiving/unarchiving a wardrobe item (RI-7) changes the Pieces stat
+    /// AND invalidates Today's cached suggestions immediately (server-side
+    /// cache invalidation on archive) — both refetch on next view.
+    private func onWardrobeItemStatusChanged() {
+        profileViewModel?.markStale()
+        todayViewModel?.markStale()
+        statsViewModel?.markStale()
     }
 
     @ViewBuilder
@@ -90,11 +121,22 @@ struct MainTabsView: View {
 
         case .wardrobe:
             if let wardrobeViewModel {
-                // A successful upload changes the Pieces stat.
+                // A successful upload changes the Pieces stat; an
+                // archive/unarchive (from the item detail screen) also
+                // invalidates Today and Stats — see `onWardrobeItemStatusChanged`.
                 WardrobeScreen(
                     viewModel: wardrobeViewModel,
-                    onItemUploaded: { profileViewModel?.markStale() }
+                    onItemUploaded: {
+                        profileViewModel?.markStale()
+                        statsViewModel?.markStale()
+                    },
+                    onItemStatusChanged: onWardrobeItemStatusChanged
                 )
+            }
+
+        case .stats:
+            if let statsViewModel, let wardrobeViewModel {
+                StatsScreen(viewModel: statsViewModel, wardrobeRepository: wardrobeViewModel.repository)
             }
 
         case .history:

@@ -116,20 +116,30 @@ final class WardrobeViewModel {
 
     // MARK: Dependencies
 
-    private let repository: WardrobeRepository
+    /// Not private: `WardrobeScreen` hands this to `WardrobeItemDetailView` /
+    /// `ArchivedWardrobeView` so they share the same stateless facade instead
+    /// of constructing a redundant one.
+    let repository: WardrobeRepository
     /// Time between status polls while any item is pending/processing (~2s).
     private let pollInterval: Duration
     /// Give up polling after this long even if items never reach a terminal state (~90s).
     private let pollCap: Duration
+    /// Which lifecycle bucket this view model lists — `.active` for the main
+    /// Wardrobe tab, `.archived` for the Archived view (RI-7). Fixed for the
+    /// life of the view model; a screen that needs the other bucket creates
+    /// its own instance (see `ArchivedWardrobeView`).
+    private let status: WardrobeItemStatus
 
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     init(
         repository: WardrobeRepository,
+        status: WardrobeItemStatus = .active,
         pollInterval: Duration = .seconds(2),
         pollCap: Duration = .seconds(90)
     ) {
         self.repository = repository
+        self.status = status
         self.pollInterval = pollInterval
         self.pollCap = pollCap
     }
@@ -159,7 +169,7 @@ final class WardrobeViewModel {
     /// never an error — the last good state stays and nothing is surfaced.
     private func fetch(surfaceError: Bool) async {
         do {
-            let response = try await repository.list()
+            let response = try await repository.list(status: status.rawValue)
             items = response.items
             totalCount = response.total
             currentPage = response.page
@@ -182,7 +192,7 @@ final class WardrobeViewModel {
     /// silent — the last good list stays.
     private func fetchPageOneMerging() async {
         do {
-            let response = try await repository.list()
+            let response = try await repository.list(status: status.rawValue)
             totalCount = response.total
             totalPages = response.totalPages
             var merged = items
@@ -228,7 +238,7 @@ final class WardrobeViewModel {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let response = try await repository.list(page: currentPage + 1)
+            let response = try await repository.list(page: currentPage + 1, status: status.rawValue)
             currentPage = response.page
             totalPages = response.totalPages
             totalCount = response.total

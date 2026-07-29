@@ -234,6 +234,7 @@ struct ModelDecodingTests {
         // OutfitScores response schema (which drops those keys).
         let json = """
         {
+          "recommendation_id": "33333333-3333-3333-3333-333333333333",
           "suggestions": [
             {
               "top_item_id": "11111111-1111-1111-1111-111111111111",
@@ -270,7 +271,8 @@ struct ModelDecodingTests {
                 "wind_speed": 3.2,
                 "icon": "01d"
               },
-              "occasion_context": "casual"
+              "occasion_context": "casual",
+              "outfit_index": 0
             }
           ],
           "total_suggestions": 1,
@@ -301,8 +303,8 @@ struct ModelDecodingTests {
         #expect(response.weather.description == "clear sky")
 
         let suggestion = try #require(response.suggestions.first)
-        #expect(suggestion.topItem.colorPrimary == "navy")
-        #expect(suggestion.bottomItem.imageUrl == nil)
+        #expect(suggestion.topItem?.colorPrimary == "navy")
+        #expect(suggestion.bottomItem?.imageUrl == nil)
         #expect(suggestion.accessoryItem == nil)
         #expect(suggestion.scores.colorHarmony == 0.82)
         #expect(suggestion.scores.styleDna == nil)

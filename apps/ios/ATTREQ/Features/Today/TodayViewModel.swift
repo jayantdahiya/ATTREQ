@@ -8,22 +8,40 @@
 //  RN semantics mirrored here (dashboard-screen.tsx + recommendation-card.tsx):
 //  - "Wear this" / swipe right → POST /outfits (create-or-reuse) then
 //    POST /outfits/{id}/wear with today's LOCAL date (deliberate divergence
-//    from RN's UTC date; see `todayWornDate`).
+//    from RN's UTC date; see `todayWornDate`). RI-1: also records the
+//    recommendation-level `accepted` signal (see `wear`).
 //  - Heart button → POST /outfits/{id}/feedback with feedback_score 1
 //    (create-or-reuse first). The card stays visible in RN, so `love` does
-//    NOT advance the index.
+//    NOT advance the index. Unchanged by RI-1 — a heart is "I like this,"
+//    not "I chose this today"; recommendation-level telemetry is about the
+//    chosen/worn outfit vs. shown-but-skipped ones, not general likes.
 //  - X button / swipe left ("Skip" overlay) → POST /outfits/{id}/feedback
 //    with feedback_score -1 (`dismiss` here). RN renders every suggestion in
 //    a list so nothing moves; on our index-paged card, dismissing advances.
 //  - The mono "Skip / Wear" row in RN is purely decorative (no handlers);
-//    our `skip()` is the local-only advance with no API call.
+//    our `skip()` used to be a local-only advance with no API call — RI-1
+//    adds a rejection-reason sheet to both `skip()` and `dismiss()` so every
+//    reject/skip becomes recommendation-level telemetry with an optional
+//    enum reason, closing the "shown-but-skipped" gap the preference-pair
+//    pipeline (RI-5) depends on.
 //  - Suggestions created once per session are remembered by
 //    "topId:bottomId" key so heart-then-wear reuses the same outfit row
 //    (RN `persistedOutfits`).
 //
+//  RI-1 rejection flow: `skip()`/`dismiss(using:)` no longer act immediately —
+//  they open `RejectionReasonSheet` (bound to `isPresentingRejectionSheet`)
+//  and stash which flow triggered it. The sheet's chip tap / "Skip" button /
+//  swipe-away all eventually call `confirmRejection(reason:note:)` exactly
+//  once, which performs the deferred action (plus, for dismiss, the existing
+//  unchanged outfit-level -1 call) and always emits the new
+//  `POST /recommendations/{id}/feedback` (action=rejected) telemetry event.
+//  No swap UI ships in RI-1 — `swapped_item_ids` on the backend request stays
+//  schema-only; nothing in this view model produces a `.swapped` action.
+//
 
 import Foundation
 import Observation
+import os
 
 /// Deterministic, PURELY PRESENTATIONAL look titles. The backend has no
 /// concept of outfit names and RN shows the capitalized occasion; the design
@@ -65,6 +83,18 @@ final class TodayViewModel {
         case empty
     }
 
+    /// Which gesture opened the rejection-reason sheet, and what it still
+    /// needs to do once a reason (or "Skip") is confirmed.
+    private enum PendingRejection {
+        /// Pure local-advance skip — RI-1 adds recommendation-level
+        /// telemetry only; no outfit row is created (unchanged: skipping
+        /// never materializes an outfit).
+        case skip
+        /// X / swipe-left dismiss — keeps the existing outfit-level -1 call
+        /// (unchanged contract) in addition to the new telemetry event.
+        case dismiss(OutfitsRepository)
+    }
+
     // MARK: State (read by TodayScreen)
 
     private(set) var state: LoadState = .loading
@@ -84,6 +114,11 @@ final class TodayViewModel {
     private(set) var isSubmittingFeedback = false
     /// Last action/load failure, rendered as a banner; cleared on next success.
     var errorMessage: String?
+
+    /// Bound by `TodayScreen`'s `.sheet(isPresented:)` for `RejectionReasonSheet`.
+    /// Settable externally so the sheet's own swipe-to-dismiss gesture (which
+    /// SwiftUI flips straight to `false`) is reflected here too.
+    var isPresentingRejectionSheet = false
 
     /// Suggestion on the card, `nil` when there are none.
     var current: OutfitSuggestion? {
@@ -132,11 +167,39 @@ final class TodayViewModel {
     // MARK: Dependencies
 
     private let repository: RecommendationsRepository
+    private let logger = Logger(subsystem: "com.attreq.ios", category: "TodayViewModel")
 
     /// Outfit ids already created this session, keyed "topId:bottomId" —
     /// mirrors RN's `persistedOutfits` so heart + wear on the same suggestion
     /// creates only one outfit row.
     @ObservationIgnored private var persistedOutfits: [String: String] = [:]
+
+    /// Groups the current shown batch for recommendation-level feedback
+    /// (RI-1). `nil` until the first successful load; refreshed on every
+    /// new `/daily` call (including `force_refresh`, which is a genuinely
+    /// new impression server-side).
+    @ObservationIgnored private(set) var recommendationId: String?
+
+    /// Set by `skip()`/`dismiss(using:)` when they open the rejection sheet;
+    /// consumed exactly once by `confirmRejection`.
+    @ObservationIgnored private var pendingRejection: PendingRejection?
+
+    /// Set when an in-app action (archiving/unarchiving a wardrobe item)
+    /// invalidates today's cached suggestions — the server invalidates its
+    /// own cache immediately on archive, so the client shouldn't assume the
+    /// normal 24h daily-cache staleness window still applies. Mirrors
+    /// `ProfileViewModel.needsRefresh`.
+    @ObservationIgnored private var needsRefresh = false
+
+    /// RI-5 (Task 5.4): the day's answered morning-vibe hint, `nil` until the
+    /// user picks one. Persisted across `load()`/`refresh()` calls (a
+    /// pull-to-refresh must not silently drop an already-answered hint).
+    @ObservationIgnored private(set) var vibeHint: String?
+
+    /// RI-5 (Task 5.3): today's swipe-deck rating count/cap — `nil` until
+    /// `loadSwipeDeckStatus()` resolves; best-effort, never blocks the
+    /// primary Today load.
+    private(set) var swipeDeckStatus: SwipeDeckStatus?
 
     init(repository: RecommendationsRepository) {
         self.repository = repository
@@ -147,10 +210,18 @@ final class TodayViewModel {
     /// First load / re-entry load. Uses the server's daily cache. Safe to
     /// call repeatedly (`.task` re-fires on every tab switch): once content
     /// is loaded it returns immediately — preserving `currentIndex` and any
-    /// in-flight wear — while failed/empty/initial-loading states retry.
+    /// in-flight wear — unless an in-app action marked it stale (see
+    /// `markStale()`), while failed/empty/initial-loading states retry.
     func load() async {
-        guard state != .loaded else { return }
+        guard state != .loaded || needsRefresh else { return }
         await fetch(refresh: false)
+    }
+
+    /// Invalidate cached suggestions so the next `load()` refetches — called
+    /// after a wardrobe item is archived/unarchived (RI-7), since that
+    /// changes eligibility immediately server-side.
+    func markStale() {
+        needsRefresh = true
     }
 
     /// Pull-to-refresh: `force_refresh=true` regenerates past the daily cache.
@@ -164,12 +235,16 @@ final class TodayViewModel {
             state = .loading
         }
         do {
-            let response = try await repository.daily(refresh: refresh, occasion: occasion ?? "casual")
+            let response = try await repository.daily(
+                refresh: refresh, occasion: occasion ?? "casual", occasionHint: vibeHint
+            )
             suggestions = response.suggestions
             currentIndex = 0
             weather = response.weather
             occasion = response.occasion
+            recommendationId = response.recommendationId
             errorMessage = nil
+            needsRefresh = false
             state = suggestions.isEmpty ? .empty : .loaded
         } catch {
             guard !Self.isCancellation(error) else { return }
@@ -191,12 +266,78 @@ final class TodayViewModel {
         }
     }
 
+    // MARK: Morning vibe prompt (RI-5, Task 5.4)
+
+    /// "Remembered per day": a wrong/stale guess here only costs a redundant
+    /// prompt (never blocks anything), so a plain date-keyed `UserDefaults`
+    /// flag is sufficient — no need for the heavier per-day server round trip
+    /// (`user_events` `vibe_answered`) just to decide whether to show the chip
+    /// row again.
+    private static let vibeAnsweredDateDefaultsKey = "com.attreq.vibeAnsweredDate"
+
+    var hasAnsweredVibeToday: Bool {
+        UserDefaults.standard.string(forKey: Self.vibeAnsweredDateDefaultsKey) == Self.todayWornDate()
+    }
+
+    /// One-tap chip selection (Sharp/Relaxed/Bold): marks today answered and
+    /// re-fetches with `occasion_hint` set — a soft formality nudge, not a
+    /// hard filter (see backend `services/recommendation/vibe.py`).
+    func selectVibe(_ hint: String) async {
+        markVibeAnsweredToday()
+        vibeHint = hint
+        await fetch(refresh: false)
+    }
+
+    /// Skippable by design — marks the day answered with no hint, so the
+    /// chip row doesn't nag again until tomorrow.
+    func skipVibe() {
+        markVibeAnsweredToday()
+    }
+
+    private func markVibeAnsweredToday() {
+        UserDefaults.standard.set(Self.todayWornDate(), forKey: Self.vibeAnsweredDateDefaultsKey)
+    }
+
+    // MARK: Swipe deck entry point (RI-5, Task 5.3)
+
+    /// Best-effort — a failure here just leaves `swipeDeckStatus` `nil`
+    /// (`showsSwipeDeckEntry` defaults to showing the entry point rather than
+    /// hiding a feature the user hasn't exhausted), never blocks/errors the
+    /// primary Today load.
+    func loadSwipeDeckStatus() async {
+        do {
+            swipeDeckStatus = try await repository.swipeDeckStatus()
+        } catch {
+            logger.error("swipe-deck status failed (non-fatal): \(String(describing: error))")
+        }
+    }
+
+    /// Whether to show the "Rate a few looks" entry card — hidden once
+    /// today's rating cap is reached.
+    var showsSwipeDeckEntry: Bool {
+        swipeDeckStatus?.hasRatingsRemaining ?? true
+    }
+
+    /// Factory for the swipe-deck sheet — reuses this view model's already-
+    /// injected `repository` rather than requiring `TodayScreen` to construct
+    /// its own `RecommendationsRepository` (which would need a second
+    /// `APIClient` reference `OutfitsRepository` doesn't expose).
+    func makeSwipeDeckViewModel() -> SwipeDeckViewModel {
+        SwipeDeckViewModel(repository: repository)
+    }
+
     // MARK: Actions
 
     /// "Wear this" / swipe right: persist the suggestion (create-or-reuse)
     /// then mark it worn today (the user's LOCAL date — see `todayWornDate`).
     /// Advances to the next look on success. Returns whether it succeeded so
     /// the screen can refresh the History tab.
+    ///
+    /// RI-1: on success, also fires the recommendation-level `accepted`
+    /// signal — this is the positive half of the preference pair against
+    /// whichever other suggestions in the same batch get `rejected`/stay
+    /// merely `shown`. Fire-and-forget: telemetry failure must never block
+    /// (or be reported through) the wear flow the user is actually waiting on.
     func wear(using outfitsRepository: OutfitsRepository) async -> Bool {
         guard let suggestion = current, !isWearing, !isSubmittingFeedback else { return false }
         isWearing = true
@@ -205,6 +346,7 @@ final class TodayViewModel {
             let outfitId = try await persistedOutfitId(for: suggestion, using: outfitsRepository)
             _ = try await outfitsRepository.markWorn(outfitId: outfitId, wornDate: Self.todayWornDate())
             errorMessage = nil
+            await recordRecommendationFeedback(for: suggestion, action: .accepted)
             advance()
             return true
         } catch {
@@ -213,32 +355,78 @@ final class TodayViewModel {
         }
     }
 
-    /// Local-only advance to the next suggestion — no API call (the RN
-    /// "Skip" mono label has no handler; only the X/swipe-left path posts
-    /// feedback, which is `dismiss`). Wraps past the last look so Skip always
-    /// shows another suggestion.
+    /// Opens the rejection-reason sheet for a pure local-advance skip (RI-1).
+    /// No outfit is ever created here — only `confirmRejection` performs the
+    /// actual (recommendation-level-only) telemetry write once a reason (or
+    /// bare "Skip") is chosen.
     func skip() {
-        advance()
+        guard current != nil else { return }
+        pendingRejection = .skip
+        isPresentingRejectionSheet = true
     }
 
     /// Heart: `feedback_score 1` ("we will bias toward outfits like this").
     /// The card stays put — RN keeps the card visible after loving it.
+    /// Unchanged by RI-1 (see file header note on why `love` stays untouched).
     func love(using outfitsRepository: OutfitsRepository) async -> Bool {
         await submitFeedback(1, using: outfitsRepository)
     }
 
-    /// X / swipe left: `feedback_score -1` ("we will steer away from looks
-    /// like this"), then advance — the index-paged mirror of RN's Skip swipe.
-    func dismiss(using outfitsRepository: OutfitsRepository) async -> Bool {
-        let succeeded = await submitFeedback(-1, using: outfitsRepository)
-        if succeeded {
-            advance()
+    /// X / swipe left: opens the SAME rejection-reason sheet as `skip()`
+    /// (RI-1). The existing outfit-level `feedback_score -1` call (unchanged
+    /// contract) is deferred into `confirmRejection` alongside it, rather
+    /// than firing immediately — both need the user's reason choice first.
+    func dismiss(using outfitsRepository: OutfitsRepository) {
+        guard current != nil else { return }
+        pendingRejection = .dismiss(outfitsRepository)
+        isPresentingRejectionSheet = true
+    }
+
+    /// Called by `RejectionReasonSheet` exactly once — from a chip+Submit
+    /// tap, the "Skip" button, or an interactive swipe-away — regardless of
+    /// which flow (`skip`/`dismiss`) opened it. `reason`/`note` are `nil` for
+    /// a bare rejection, which is still a valid preference-pair signal.
+    ///
+    /// Returns whether an outfit row was recorded (mirrors the old
+    /// `dismiss(using:)` return contract) so `TodayScreen` can still decide
+    /// whether to refresh the History tab.
+    @discardableResult
+    func confirmRejection(reason: RejectionReason?, note: String?) async -> Bool {
+        defer {
+            pendingRejection = nil
+            isPresentingRejectionSheet = false
         }
-        return succeeded
+        guard let suggestion = current, let pending = pendingRejection else { return false }
+
+        switch pending {
+        case .skip:
+            await recordRecommendationFeedback(
+                for: suggestion, action: .rejected, rejectionReason: reason, rejectionNote: note
+            )
+            advance()
+            return false
+
+        case let .dismiss(outfitsRepository):
+            let recorded = await submitFeedback(-1, using: outfitsRepository, suggestion: suggestion)
+            await recordRecommendationFeedback(
+                for: suggestion, action: .rejected, rejectionReason: reason, rejectionNote: note
+            )
+            if recorded {
+                advance()
+            }
+            return recorded
+        }
     }
 
     private func submitFeedback(_ score: Int, using outfitsRepository: OutfitsRepository) async -> Bool {
-        guard let suggestion = current, !isWearing, !isSubmittingFeedback else { return false }
+        guard let suggestion = current else { return false }
+        return await submitFeedback(score, using: outfitsRepository, suggestion: suggestion)
+    }
+
+    private func submitFeedback(
+        _ score: Int, using outfitsRepository: OutfitsRepository, suggestion: OutfitSuggestion
+    ) async -> Bool {
+        guard !isWearing, !isSubmittingFeedback else { return false }
         isSubmittingFeedback = true
         defer { isSubmittingFeedback = false }
         do {
@@ -252,13 +440,47 @@ final class TodayViewModel {
         }
     }
 
+    /// Best-effort recommendation-level telemetry (RI-1). Never surfaces a
+    /// failure to the user and never blocks the caller's own flow (wear/skip/
+    /// dismiss) — mirrors the backend's own defensive `try/except + log`
+    /// style around `update_behaviour_weights` (`endpoints/outfits.py`).
+    private func recordRecommendationFeedback(
+        for suggestion: OutfitSuggestion,
+        action: RecommendationFeedbackAction,
+        rejectionReason: RejectionReason? = nil,
+        rejectionNote: String? = nil
+    ) async {
+        guard let recommendationId else { return }
+        // Trim defensively here too — `RejectionReasonSheet` already trims
+        // before calling back, but `confirmRejection` is a public API any
+        // caller (including tests) can invoke directly with untrimmed text.
+        let trimmedNote = rejectionNote?.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await repository.submitFeedback(
+                recommendationId: recommendationId,
+                outfitIndex: suggestion.outfitIndex,
+                action: action,
+                rejectionReason: rejectionReason,
+                rejectionNote: (trimmedNote?.isEmpty ?? true) ? nil : trimmedNote
+            )
+        } catch {
+            logger.error(
+                "recommendation feedback failed (non-fatal): action=\(action.rawValue) \(String(describing: error))"
+            )
+        }
+    }
+
     /// Create-or-reuse: one outfit row per suggestion per session (RN
     /// `persistedOutfits` keyed `${top_item_id}:${bottom_item_id}`).
+    ///
+    /// RI-4: a fullbody-anchored suggestion has no top/bottom ids — falls
+    /// back to `fullbodyItemId` (unique per suggestion either way, so the
+    /// create-or-reuse semantics are unchanged).
     private func persistedOutfitId(
         for suggestion: OutfitSuggestion,
         using outfitsRepository: OutfitsRepository
     ) async throws -> String {
-        let key = "\(suggestion.topItemId):\(suggestion.bottomItemId)"
+        let key = "\(suggestion.topItemId ?? "-"):\(suggestion.bottomItemId ?? "-"):\(suggestion.fullbodyItemId ?? "-")"
         if let existing = persistedOutfits[key] {
             return existing
         }

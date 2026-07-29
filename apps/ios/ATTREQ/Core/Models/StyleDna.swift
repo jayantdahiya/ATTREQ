@@ -43,6 +43,18 @@ struct StyleDnaOccasions: Codable, Sendable, Equatable {
     let confidence: Double
 }
 
+/// Mirrors backend `personal_color` key (RI-3, `services/style_dna/personal_color.py`):
+/// two continuous axes estimated from an optional, opt-in selfie — NEVER a
+/// self-declared "season" label. `undertoneWarmCool`/`depthLightDeep` are
+/// `[-1, 1]` (+1 = deep/warm, -1 = light/cool per the backend's convention);
+/// `confidence` is `[0, 1]`. Absent entirely until the user completes
+/// `POST /users/style-dna/selfie` at least once.
+struct PersonalColor: Codable, Sendable, Equatable {
+    let undertoneWarmCool: Double
+    let depthLightDeep: Double
+    let confidence: Double
+}
+
 /// Mirrors TS `StyleDna`. The backend types this as `dict[str, Any]`; the
 /// concrete shape comes from the synthesis prompt in
 /// `services/style_dna/prompts.py`, which matches the TS interface exactly.
@@ -57,6 +69,31 @@ struct StyleDna: Codable, Sendable, Equatable {
     /// Dictionary String keys keep their raw backend snake_case form —
     /// `.convertFromSnakeCase` does not rewrite dictionary keys on this runtime.
     let behaviourWeights: [String: [String: Double]]
+    /// Optional (RI-3): present only after a selfie estimation call. An
+    /// `Optional` synthesized property decodes as `nil` when the key is
+    /// absent — unlike the required fields above, its absence does NOT fail
+    /// the whole `StyleDna` decode.
+    let personalColor: PersonalColor?
+
+    init(
+        aesthetic: StyleDnaAesthetic,
+        colorPalette: StyleDnaColorPalette,
+        patterns: StyleDnaPatterns,
+        silhouette: StyleDnaSilhouette,
+        formalityBias: StyleDnaFormalityBias,
+        occasions: StyleDnaOccasions,
+        behaviourWeights: [String: [String: Double]],
+        personalColor: PersonalColor? = nil
+    ) {
+        self.aesthetic = aesthetic
+        self.colorPalette = colorPalette
+        self.patterns = patterns
+        self.silhouette = silhouette
+        self.formalityBias = formalityBias
+        self.occasions = occasions
+        self.behaviourWeights = behaviourWeights
+        self.personalColor = personalColor
+    }
 }
 
 /// Mirrors backend `StyleDnaPhotoResponse` (`schemas/style_dna.py`) / TS `StyleDnaPhoto`.

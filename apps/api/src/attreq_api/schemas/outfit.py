@@ -13,6 +13,10 @@ class OutfitBase(BaseModel):
     bottom_item_id: UUID | None = None
     accessory_ids: list[UUID] | None = None
     occasion_context: str | None = Field(None, max_length=100)
+    # RI-4 outfit slots (launch-M3 footwear/outerwear + the fullbody anchor).
+    footwear_item_id: UUID | None = None
+    outerwear_item_id: UUID | None = None
+    fullbody_item_id: UUID | None = None
 
 
 class OutfitCreate(OutfitBase):
