@@ -9,9 +9,10 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://attreq_user:attreq_password@localhost:5432/attreq_db")
 os.environ.setdefault("POSTGRES_DB", "attreq_db")

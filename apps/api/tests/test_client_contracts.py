@@ -461,6 +461,100 @@ async def test_mark_outfit_worn_updates_outfit_and_items(monkeypatch, client, du
 
 
 @pytest.mark.asyncio
+async def test_mark_outfit_worn_updates_ri4_slot_items(monkeypatch, client, dummy_db):
+    """RI-4 slots (fullbody/footwear/outerwear) must get wear_count/last_worn updates too."""
+    user = build_user()
+    fullbody_item = build_wardrobe_item(user_id=user.id, category="dress")
+    footwear_item = build_wardrobe_item(user_id=user.id, category="sneakers")
+    outerwear_item = build_wardrobe_item(user_id=user.id, category="jacket")
+    outfit_record = build_outfit(
+        user_id=user.id,
+        fullbody_item_id=fullbody_item.id,
+        footwear_item_id=footwear_item.id,
+        outerwear_item_id=outerwear_item.id,
+    )
+    items = {item.id: item for item in (fullbody_item, footwear_item, outerwear_item)}
+    update_calls: list[tuple[uuid.UUID, dict]] = []
+
+    async def override_get_db():
+        yield dummy_db
+
+    async def fake_get_outfit(db, outfit_id, user_id=None, load_items=False):
+        return outfit_record
+
+    async def fake_mark_as_worn(db, outfit_id, worn_date):
+        outfit_record.worn_date = worn_date
+        return outfit_record
+
+    async def fake_get_item(db, item_id, user_id=None):
+        return items.get(item_id)
+
+    async def fake_update_item(db, item_id, data):
+        update_calls.append((item_id, data))
+        return
+
+    monkeypatch.setattr(outfits.outfit_crud, "get_by_id", fake_get_outfit)
+    monkeypatch.setattr(outfits.outfit_crud, "mark_as_worn", fake_mark_as_worn)
+    monkeypatch.setattr(outfits.wardrobe_crud, "get_by_id", fake_get_item)
+    monkeypatch.setattr(outfits.wardrobe_crud, "update", fake_update_item)
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
+
+    response = await client.post(
+        f"/api/v1/outfits/{outfit_record.id}/wear",
+        json={"worn_date": str(date(2026, 4, 18))},
+    )
+
+    assert response.status_code == 200
+    assert {item_id for item_id, _ in update_calls} == set(items)
+    for item_id, data in update_calls:
+        assert data["wear_count"] == items[item_id].wear_count + 1
+        assert data["last_worn"] == date(2026, 4, 18)
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_get_recently_worn_items_includes_ri4_slots(dummy_db):
+    """The 14-day anti-repetition set must include fullbody/footwear/outerwear ids."""
+    user = build_user()
+    outfit_record = build_outfit(
+        user_id=user.id,
+        top_item_id=uuid.uuid4(),
+        bottom_item_id=uuid.uuid4(),
+        fullbody_item_id=uuid.uuid4(),
+        footwear_item_id=uuid.uuid4(),
+        outerwear_item_id=uuid.uuid4(),
+        accessory_ids=[uuid.uuid4()],
+        worn_date=date(2026, 4, 18),
+    )
+
+    class FakeScalars:
+        def all(self):
+            return [outfit_record]
+
+    class FakeResult:
+        def scalars(self):
+            return FakeScalars()
+
+    async def fake_execute(query):
+        return FakeResult()
+
+    dummy_db.execute = fake_execute
+
+    worn_item_ids = await algorithm.get_recently_worn_items(dummy_db, user.id)
+
+    assert worn_item_ids == {
+        outfit_record.top_item_id,
+        outfit_record.bottom_item_id,
+        outfit_record.fullbody_item_id,
+        outfit_record.footwear_item_id,
+        outfit_record.outerwear_item_id,
+        *outfit_record.accessory_ids,
+    }
+
+
+@pytest.mark.asyncio
 async def test_submit_outfit_feedback_uses_feedback_score_contract(monkeypatch, client, dummy_db):
     user = build_user()
     outfit_record = build_outfit(user_id=user.id)

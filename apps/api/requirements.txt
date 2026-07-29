@@ -41,7 +41,7 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 
 # Linting and formatting
-ruff>=0.8.0
+ruff>=0.8.0,<0.16
 
 # AI/ML dependencies (Phase 3)
 anthropic>=0.40.0

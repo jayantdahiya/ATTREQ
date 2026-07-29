@@ -267,6 +267,33 @@ async def mark_outfit_worn(
                 {"wear_count": item.wear_count + 1, "last_worn": wear_data.worn_date},
             )
 
+    if outfit.fullbody_item_id:
+        item = await wardrobe_crud.get_by_id(db, outfit.fullbody_item_id)
+        if item:
+            await wardrobe_crud.update(
+                db,
+                outfit.fullbody_item_id,
+                {"wear_count": item.wear_count + 1, "last_worn": wear_data.worn_date},
+            )
+
+    if outfit.footwear_item_id:
+        item = await wardrobe_crud.get_by_id(db, outfit.footwear_item_id)
+        if item:
+            await wardrobe_crud.update(
+                db,
+                outfit.footwear_item_id,
+                {"wear_count": item.wear_count + 1, "last_worn": wear_data.worn_date},
+            )
+
+    if outfit.outerwear_item_id:
+        item = await wardrobe_crud.get_by_id(db, outfit.outerwear_item_id)
+        if item:
+            await wardrobe_crud.update(
+                db,
+                outfit.outerwear_item_id,
+                {"wear_count": item.wear_count + 1, "last_worn": wear_data.worn_date},
+            )
+
     # Update accessories
     if outfit.accessory_ids:
         for acc_id in outfit.accessory_ids:

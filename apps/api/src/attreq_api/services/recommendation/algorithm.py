@@ -205,6 +205,12 @@ async def get_recently_worn_items(db: AsyncSession, user_id: UUID, days: int = 1
             worn_item_ids.add(outfit.top_item_id)
         if outfit.bottom_item_id:
             worn_item_ids.add(outfit.bottom_item_id)
+        if outfit.fullbody_item_id:
+            worn_item_ids.add(outfit.fullbody_item_id)
+        if outfit.footwear_item_id:
+            worn_item_ids.add(outfit.footwear_item_id)
+        if outfit.outerwear_item_id:
+            worn_item_ids.add(outfit.outerwear_item_id)
         if outfit.accessory_ids:
             worn_item_ids.update(outfit.accessory_ids)
 
