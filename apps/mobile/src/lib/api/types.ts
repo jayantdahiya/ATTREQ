@@ -358,6 +358,103 @@ export interface OutfitList {
   total_pages: number;
 }
 
+// ── Wardrobe stats & forgotten items (A5) — mirrors apps/api schemas/stats.py
+// + iOS Core/Models/WardrobeStats.swift. Both payloads are computed over ACTIVE
+// items only. `generated_at` is a date-only string, not a timestamp. snake_case.
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface CategoryBreakdown {
+  category: string;
+  count: number;
+}
+
+export interface ColorFamilyBreakdown {
+  /** neutral | warm | cool | other | unknown */
+  family: string;
+  count: number;
+}
+
+export interface BrandBreakdown {
+  /** "Unbranded" when the item has no brand set. */
+  brand: string;
+  count: number;
+}
+
+/** A single entry in the most/least-worn lists. `wear_count` = "worn in N
+ * outfits" (distinct worn outfits containing the item), not a raw counter. */
+export interface WornItemEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  wear_count: number;
+  /** Date-only string ('YYYY-MM-DD'), null if never worn. */
+  last_worn: string | null;
+}
+
+/** Cost-per-wear entry — only present for items with a purchase price set.
+ * `cost_per_wear` is null when the item has a price but was never worn. */
+export interface CostPerWearEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  purchase_price: number;
+  wear_count: number;
+  cost_per_wear: number | null;
+}
+
+/** GET /stats/wardrobe — dashboard payload. */
+export interface WardrobeStatsResponse {
+  total_active_items: number;
+  by_category: CategoryBreakdown[];
+  by_color_family: ColorFamilyBreakdown[];
+  by_brand: BrandBreakdown[];
+  closet_value: number;
+  items_missing_price: number;
+  never_worn_count: number;
+  never_worn_percent: number;
+  most_worn: WornItemEntry[];
+  least_worn: WornItemEntry[];
+  cost_per_wear: CostPerWearEntry[];
+  worn_last_30_days: number;
+  worn_last_90_days: number;
+  /** Date-only string (backend `date.today().isoformat()`). */
+  generated_at: string;
+  cached: boolean;
+}
+
+/** Suggested pairing partner for a forgotten item ("wear it with…"). */
+export interface ForgottenPartner {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  score: number;
+}
+
+/** A single forgotten (never-worn or stale) wardrobe item. */
+export interface ForgottenItemEntry {
+  item_id: string;
+  category: string | null;
+  color_primary: string | null;
+  thumbnail_url: string | null;
+  wear_count: number;
+  last_worn: string | null;
+  /** null for never-worn items (no "last worn" to measure from). */
+  days_since_worn: number | null;
+  /** null when the algorithm found no good pairing candidate. */
+  best_partner: ForgottenPartner | null;
+}
+
+/** GET /stats/forgotten — forgotten-items surface payload. */
+export interface ForgottenItemsResponse {
+  items: ForgottenItemEntry[];
+  count: number;
+  generated_at: string;
+  cached: boolean;
+}
+
 /**
  * A wardrobe item detected inside a Style DNA outfit photo, flattened out of
  * `photos[].per_photo_extraction.wardrobe_items_detected` (see

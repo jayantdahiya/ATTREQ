@@ -5,7 +5,7 @@ import { TabBar, type AttreqTab } from '@/design-system/components/TabBar';
 import { WardrobeStack } from '@/features/wardrobe/WardrobeStack';
 import { TodayScreen } from '@/features/today/TodayScreen';
 import { HistoryScreen } from '@/features/history/HistoryScreen';
-import { ProfilePlaceholderScreen } from '@/features/profile/ProfilePlaceholderScreen';
+import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { TabPlaceholderScreen } from '@/features/tabs/TabPlaceholderScreen';
 
 /** Authenticated tab shell (JS-only) with the floating pill tab bar. */
@@ -22,7 +22,7 @@ export function MainTabs() {
       ) : tab === 'history' ? (
         <HistoryScreen />
       ) : tab === 'profile' ? (
-        <ProfilePlaceholderScreen />
+        <ProfileScreen />
       ) : (
         <TabPlaceholderScreen tab={tab} />
       )}

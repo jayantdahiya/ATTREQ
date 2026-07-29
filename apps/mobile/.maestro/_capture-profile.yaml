@@ -1,0 +1,24 @@
+appId: com.attreq.mobile
+# Helper: log in and land on the Profile tab for screenshotting.
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn:
+    id: 'login-email'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+- tapOn: 'PROFILE'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-screen'
+    timeout: 15000

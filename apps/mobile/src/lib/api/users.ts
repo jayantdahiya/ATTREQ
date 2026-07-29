@@ -16,6 +16,11 @@ export interface ProfileUpdatePayload {
   saved_city?: string;
 }
 
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
 export const usersApi = {
   async updateLocation(payload: LocationPayload) {
     const response = await apiClient.patch<User>('/users/me/location', payload);
@@ -27,6 +32,18 @@ export const usersApi = {
   },
   async completeOnboarding(): Promise<User> {
     const response = await apiClient.post<User>('/users/onboarding/complete');
+    return response.data;
+  },
+  // POST /users/change-password — verifies current, sets new. Backend enforces
+  // the same strength rules as registration (>=8 chars, upper/lower/digit).
+  async changePassword(payload: ChangePasswordPayload) {
+    const response = await apiClient.post<{ message: string }>('/users/change-password', payload);
+    return response.data;
+  },
+  // DELETE /users/me — soft-deactivates the account (is_active=false). The
+  // caller signs out afterwards (the access token is now for an inactive user).
+  async deleteAccount() {
+    const response = await apiClient.delete<{ message: string }>('/users/me');
     return response.data;
   },
 };
