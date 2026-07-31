@@ -19,11 +19,12 @@ appId: com.attreq.mobile
 - tapOn:
     id: 'login-submit'
 
-# Lands on the tab shell → Wardrobe
+# Lands on the tab shell (default tab is Today) → switch to Wardrobe
 - extendedWaitUntil:
     visible:
       id: 'main-tabs'
     timeout: 20000
+- tapOn: 'WARDROBE'
 - extendedWaitUntil:
     visible:
       id: 'wardrobe-screen'

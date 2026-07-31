@@ -40,26 +40,44 @@ appId: com.attreq.mobile
     id: 'register-submit'
 
 # --- New user lands on the onboarding gate (after register → login → enrichment) ---
-# Assert by testID (reliably in the Android view hierarchy).
+# Run the Style DNA onboarding via the Skip path (photo pickers are native — not
+# Maestro-drivable): upload → skip → wardrobe capture → selfie skip → tabs.
 - extendedWaitUntil:
     visible:
-      id: 'onboarding-screen'
+      id: 'onboarding-upload-screen'
     timeout: 25000
 - tapOn:
-    id: 'complete-onboarding'
+    id: 'onboarding-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'capture-screen'
+    timeout: 15000
+- tapOn:
+    id: 'capture-continue'
+- extendedWaitUntil:
+    visible:
+      id: 'selfie-screen'
+    timeout: 15000
+- tapOn:
+    id: 'selfie-skip'
 
-# --- Tab shell (lands on Wardrobe) ---
+# --- Tab shell (lands on Today) ---
 - extendedWaitUntil:
     visible:
       id: 'main-tabs'
     timeout: 20000
 
-# --- Sign out from the Profile tab ---
+# --- Sign out from the Profile tab (sign-out sits below the fold) ---
 - tapOn: 'PROFILE'
 - extendedWaitUntil:
     visible:
-      id: 'sign-out'
+      id: 'profile-screen'
     timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: 'sign-out'
+    direction: DOWN
+    centerElement: true
 - tapOn:
     id: 'sign-out'
 
