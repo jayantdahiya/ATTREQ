@@ -1,0 +1,50 @@
+appId: com.attreq.mobile
+# Helper: register a fresh user and screenshot each onboarding screen.
+---
+- evalScript: ${output.email = 'a3shot_' + new Date().getTime() + '@example.com'}
+- evalScript: ${output.password = 'Password123'}
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn: 'Create account'
+- tapOn:
+    id: 'register-email'
+- inputText: ${output.email}
+- tapOn:
+    id: 'register-fullname'
+- inputText: 'A3 Shot'
+- tapOn:
+    id: 'register-password'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-confirm'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-continue-account'
+- tapOn:
+    id: 'register-continue-style'
+- tapOn:
+    id: 'register-city'
+- inputText: 'New York'
+- hideKeyboard
+- tapOn:
+    id: 'register-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-upload-screen'
+    timeout: 25000
+- takeScreenshot: /tmp/a3_upload
+- tapOn:
+    id: 'onboarding-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'capture-screen'
+    timeout: 15000
+- takeScreenshot: /tmp/a3_capture
+- tapOn:
+    id: 'capture-continue'
+- extendedWaitUntil:
+    visible:
+      id: 'selfie-screen'
+    timeout: 15000
+- takeScreenshot: /tmp/a3_selfie

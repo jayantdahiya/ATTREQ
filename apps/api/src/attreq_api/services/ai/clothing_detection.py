@@ -1,7 +1,8 @@
 """Clothing detection service using Google Gemini API."""
 
+import asyncio
 import logging
-from pathlib import Path
+import os
 from typing import Any
 
 import numpy as np
@@ -58,7 +59,7 @@ class ClothingDetectionService:
             Exception: If detection fails
         """
         # Validate input file exists
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
 
         provider = settings.classifier_provider

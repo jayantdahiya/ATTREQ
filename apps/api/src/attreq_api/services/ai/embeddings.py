@@ -5,11 +5,21 @@ from typing import Any
 from uuid import UUID
 
 import weaviate
-from weaviate.classes.config import Configure, DataType, Property
+from weaviate.classes.config import Configure, DataType, Property, VectorDistances
 
 from attreq_api.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# RI-6: second collection for raw FashionCLIP image vectors. Kept separate
+# from `ClothingItem` (which auto-vectorizes a text `description` via
+# text2vec-transformers) rather than retrofitting it — attaching a manual
+# 512-d vector to that collection's default slot would require either named
+# vectors (a collection recreation) or disabling auto-vectorization (breaking
+# `search_similar_items`/`find_compatible_items`). `vectorizer_config=none()`
+# here: every vector is supplied by the caller (FashionCLIP output), never
+# computed by Weaviate.
+VECTOR_COLLECTION_NAME = "ClothingItemVector"
 
 
 class WeaviateEmbeddingsService:
@@ -256,6 +266,173 @@ class WeaviateEmbeddingsService:
         if self.client:
             self.client.close()
             logger.info("Weaviate connection closed")
+
+    # ------------------------------------------------------------------
+    # RI-6: ClothingItemVector — raw FashionCLIP vectors, manual (vectorizer
+    # `none`) collection. See module-level `VECTOR_COLLECTION_NAME` docstring
+    # for why this is a second collection rather than a retrofit of
+    # `ClothingItem`. Every method here follows the same soft-fail contract
+    # as the rest of this class: return `False`/`None`/`[]` on any error,
+    # never raise.
+    # ------------------------------------------------------------------
+
+    def init_vector_schema(self) -> bool:
+        """Create the `ClothingItemVector` collection if it doesn't exist yet."""
+        if not self.is_connected():
+            logger.error("Cannot initialize vector schema: Not connected to Weaviate")
+            return False
+
+        try:
+            if self.client.collections.exists(VECTOR_COLLECTION_NAME):
+                return True
+
+            self.client.collections.create(
+                name=VECTOR_COLLECTION_NAME,
+                vectorizer_config=Configure.Vectorizer.none(),
+                vector_index_config=Configure.VectorIndex.hnsw(
+                    distance_metric=VectorDistances.COSINE
+                ),
+                properties=[
+                    Property(name="itemId", data_type=DataType.TEXT),
+                    Property(name="userId", data_type=DataType.TEXT),
+                    Property(name="category", data_type=DataType.TEXT),
+                    # Forward hook for RI-2's fixed vocabulary; not enforced here.
+                    Property(name="schemaVersion", data_type=DataType.INT),
+                ],
+            )
+            logger.info(f"Collection '{VECTOR_COLLECTION_NAME}' created successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize vector schema: {str(e)}")
+            return False
+
+    def upsert_vector(
+        self,
+        item_id: UUID,
+        user_id: UUID,
+        category: str | None,
+        vector: list[float],
+    ) -> bool:
+        """Idempotent upsert: delete any existing row for `item_id`, then insert.
+
+        Weaviate v4's client has no native upsert-by-property, so this
+        mirrors the delete-then-insert pattern `delete_item`/`add_item`
+        already use for the `ClothingItem` collection.
+        """
+        if not self.is_connected():
+            logger.error("Cannot upsert vector: Not connected to Weaviate")
+            return False
+
+        try:
+            collection = self.client.collections.get(VECTOR_COLLECTION_NAME)
+            where_filter = weaviate.classes.query.Filter.by_property("itemId").equal(str(item_id))
+            collection.data.delete_many(where=where_filter)
+            collection.data.insert(
+                properties={
+                    "itemId": str(item_id),
+                    "userId": str(user_id),
+                    "category": category or "",
+                    "schemaVersion": 1,
+                },
+                vector=vector,
+            )
+            logger.info(f"Upserted vector for item {item_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to upsert vector for item {item_id}: {str(e)}")
+            return False
+
+    def get_vector(self, item_id: UUID) -> list[float] | None:
+        """Fetch the stored vector for `item_id`, or `None` if absent/on error."""
+        if not self.is_connected():
+            return None
+
+        try:
+            collection = self.client.collections.get(VECTOR_COLLECTION_NAME)
+            where_filter = weaviate.classes.query.Filter.by_property("itemId").equal(str(item_id))
+            response = collection.query.fetch_objects(
+                filters=where_filter, limit=1, include_vector=True
+            )
+            if not response.objects:
+                return None
+            vector = response.objects[0].vector
+            # weaviate-client v4 returns {"default": [...]} for a single
+            # unnamed vector on some versions, a bare list on others.
+            if isinstance(vector, dict):
+                vector = vector.get("default")
+            return list(vector) if vector else None
+        except Exception as e:
+            logger.error(f"Failed to fetch vector for item {item_id}: {str(e)}")
+            return None
+
+    def query_neighbors(
+        self,
+        vector: list[float],
+        user_id: UUID,
+        k: int = 5,
+        min_sim: float = 0.85,
+        exclude_item_id: UUID | None = None,
+    ) -> list[tuple[UUID, float]]:
+        """Nearest neighbors (by cosine similarity) to a raw `vector`, scoped
+        to `user_id`. Takes a raw vector (not an item id) so callers can
+        query with a fresh, not-yet-stored vector (near-duplicate check at
+        upload time) as well as an already-stored one.
+
+        `similarity = 1 - distance` for COSINE distance; a self-query should
+        return similarity ~= 1.0. Returns items with `similarity >= min_sim`,
+        `exclude_item_id` dropped, `[]` on any failure or Weaviate miss.
+        """
+        if not self.is_connected():
+            return []
+
+        try:
+            collection = self.client.collections.get(VECTOR_COLLECTION_NAME)
+            where_filter = weaviate.classes.query.Filter.by_property("userId").equal(str(user_id))
+            response = collection.query.near_vector(
+                near_vector=vector,
+                limit=k + 1,
+                filters=where_filter,
+                return_metadata=weaviate.classes.query.MetadataQuery(distance=True),
+            )
+
+            results: list[tuple[UUID, float]] = []
+            for obj in response.objects:
+                raw_item_id = obj.properties.get("itemId")
+                if not raw_item_id:
+                    continue
+                try:
+                    neighbor_id = UUID(raw_item_id)
+                except (ValueError, TypeError):
+                    continue
+                if exclude_item_id is not None and neighbor_id == exclude_item_id:
+                    continue
+                distance = obj.metadata.distance if obj.metadata else None
+                if distance is None:
+                    continue
+                similarity = 1.0 - distance
+                if similarity >= min_sim:
+                    results.append((neighbor_id, similarity))
+
+            return results[:k]
+        except Exception as e:
+            logger.error(f"Failed to query neighbors: {str(e)}")
+            return []
+
+    def delete_vector(self, item_id: UUID) -> bool:
+        """Delete `item_id`'s row from `ClothingItemVector` (best-effort)."""
+        if not self.is_connected():
+            logger.error("Cannot delete vector: Not connected to Weaviate")
+            return False
+
+        try:
+            collection = self.client.collections.get(VECTOR_COLLECTION_NAME)
+            where_filter = weaviate.classes.query.Filter.by_property("itemId").equal(str(item_id))
+            collection.data.delete_many(where=where_filter)
+            logger.info(f"Deleted vector for item {item_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete vector for item {item_id}: {str(e)}")
+            return False
 
 
 # Global instance

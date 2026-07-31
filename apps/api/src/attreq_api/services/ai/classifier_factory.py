@@ -21,12 +21,11 @@ def get_classifier() -> ClassifierService:
     if provider == "claude":
         from attreq_api.services.ai.claude_classifier import claude_classifier_service
         return claude_classifier_service
-    elif provider == "openai":
+    if provider == "openai":
         from attreq_api.services.ai.openai_classifier import openai_classifier_service
         return openai_classifier_service
-    elif provider == "gemini":
+    if provider == "gemini":
         from attreq_api.services.ai.gemini_classifier import gemini_classifier_service
         return gemini_classifier_service
-    else:
-        from attreq_api.services.ai.groq_classifier import groq_classifier_service
-        return groq_classifier_service
+    from attreq_api.services.ai.groq_classifier import groq_classifier_service
+    return groq_classifier_service

@@ -1,31 +1,20 @@
 """Anthropic Claude API service for wardrobe classification."""
 
+import asyncio
 import base64
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 import anthropic
 
 from attreq_api.config.settings import settings
+from attreq_api.services.ai.prompt_text import CLASSIFICATION_PROMPT
+from attreq_api.services.ai.schema_mapper import map_classifier_result_to_wardrobe_schema
 
 logger = logging.getLogger(__name__)
-
-CLASSIFICATION_PROMPT = """You are a wardrobe classification expert. Analyze the clothing item in the image and return ONLY a JSON object with these exact fields:
-
-{
-  "category": "<specific type: shirt, jeans, dress, jacket, sweater, pants, coat, blouse, skirt, shorts, t-shirt, hoodie, blazer, cardigan, tank-top, polo, chinos, leggings, jumpsuit, romper>",
-  "color_primary": "<main color: black, white, blue, red, green, brown, beige, gray, navy, maroon, pink, purple, yellow, orange, tan, cream>",
-  "color_secondary": "<second color or null>",
-  "pattern": "<solid, striped, polka-dot, floral, plaid, checkered, paisley, geometric, abstract, printed, embroidered, textured>",
-  "season": ["<summer|winter|fall|spring|all>"],
-  "occasion": ["<casual|formal|business|party>"],
-  "detection_confidence": <0.0 to 1.0>,
-  "processing_status": "completed"
-}
-
-Return ONLY the JSON object, no markdown, no explanation."""
 
 
 class ClaudeClassifierService:
@@ -43,7 +32,7 @@ class ClaudeClassifierService:
             ValueError: If API key not configured or response invalid
             anthropic.APIError: If API request fails
         """
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Claude API key not configured")
@@ -55,7 +44,7 @@ class ClaudeClassifierService:
             client = anthropic.AsyncAnthropic(api_key=self.api_key)
             message = await client.messages.create(
                 model=self.model_name,
-                max_tokens=512,
+                max_tokens=1024,
                 temperature=0.1,
                 messages=[
                     {
@@ -77,7 +66,7 @@ class ClaudeClassifierService:
 
             text = message.content[0].text
             result = self._parse_json(text)
-            return self._map_to_wardrobe_schema(result)
+            return map_classifier_result_to_wardrobe_schema(result)
 
         except Exception as e:
             logger.error(f"Claude single image classification failed: {str(e)}")
@@ -85,7 +74,7 @@ class ClaudeClassifierService:
 
     async def analyze_image(self, image_path: str, prompt: str) -> dict[str, Any]:
         """Call Claude vision with a custom prompt. Returns raw JSON dict."""
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Claude API key not configured")
@@ -165,18 +154,6 @@ class ClaudeClassifierService:
             return json.loads(text)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in Claude response: {e}") from e
-
-    def _map_to_wardrobe_schema(self, result: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "category": result.get("category"),
-            "color_primary": result.get("color_primary"),
-            "color_secondary": result.get("color_secondary"),
-            "pattern": result.get("pattern"),
-            "season": result.get("season", []),
-            "occasion": result.get("occasion", []),
-            "detection_confidence": result.get("detection_confidence", 0.0),
-            "processing_status": result.get("processing_status", "completed"),
-        }
 
 
 claude_classifier_service = ClaudeClassifierService()

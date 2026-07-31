@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from attreq_api.models.wardrobe import WardrobeItem
 
@@ -44,6 +45,9 @@ class WardrobeCRUD:
     ) -> WardrobeItem | None:
         """Get a wardrobe item by ID.
 
+        Photos are eager-loaded (selectinload) so the single-item response can
+        include them without triggering an async lazy-load (MissingGreenlet).
+
         Args:
             db: Database session
             item_id: UUID of the item
@@ -52,7 +56,9 @@ class WardrobeCRUD:
         Returns:
             Wardrobe item or None if not found
         """
-        query = select(WardrobeItem).where(WardrobeItem.id == item_id)
+        query = select(WardrobeItem).where(WardrobeItem.id == item_id).options(
+            selectinload(WardrobeItem.photos)
+        )
 
         if user_id:
             query = query.where(WardrobeItem.user_id == user_id)
@@ -68,10 +74,16 @@ class WardrobeCRUD:
         color: str | None = None,
         season: str | None = None,
         occasion: str | None = None,
+        status: str | None = "active",
         skip: int = 0,
         limit: int = 100,
     ) -> tuple[list[WardrobeItem], int]:
         """Get all wardrobe items for a user with optional filters.
+
+        Note: does NOT eager-load `photos` — the paginated list response omits
+        photos to avoid N+1 queries and async lazy-load crashes (see finding B
+        in the RI-7 plan). Callers needing photos should use `GET /items/{id}`
+        or the dedicated photos endpoint.
 
         Args:
             db: Database session
@@ -80,6 +92,7 @@ class WardrobeCRUD:
             color: Optional color filter (searches both primary and secondary)
             season: Optional season filter
             occasion: Optional occasion filter
+            status: Optional status filter ("active"/"archived"); None = all statuses
             skip: Number of items to skip (for pagination)
             limit: Maximum number of items to return
 
@@ -105,6 +118,9 @@ class WardrobeCRUD:
         if occasion:
             # PostgreSQL array contains operator
             query = query.where(WardrobeItem.occasion.contains([occasion]))
+
+        if status is not None:
+            query = query.where(WardrobeItem.status == status)
 
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())

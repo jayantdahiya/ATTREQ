@@ -14,6 +14,12 @@ from attreq_api.schemas.recommendation import (
     OutfitSuggestion,
     WeatherData,
 )
+from attreq_api.schemas.telemetry import (
+    RecommendationFeedbackAction,
+    RecommendationFeedbackRequest,
+    RecommendationFeedbackResponse,
+    RejectionReason,
+)
 from attreq_api.schemas.token import Token, TokenPayload
 from attreq_api.schemas.user import (
     PasswordChange,
@@ -53,4 +59,8 @@ __all__ = [
     "OutfitSuggestion",
     "DailySuggestionRequest",
     "DailySuggestionsResponse",
+    "RejectionReason",
+    "RecommendationFeedbackAction",
+    "RecommendationFeedbackRequest",
+    "RecommendationFeedbackResponse",
 ]

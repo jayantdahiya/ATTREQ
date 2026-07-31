@@ -1,0 +1,102 @@
+appId: com.attreq.mobile
+---
+# A1 auth smoke: register a fresh account → onboarding gate → home → sign out → log back in.
+- evalScript: ${output.email = 'a1_' + new Date().getTime() + '@example.com'}
+- evalScript: ${output.password = 'Password123'}
+
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+
+# --- Register (3-step wizard) ---
+- tapOn: 'Create account'
+- assertVisible: 'Step 01 — Account'
+- tapOn:
+    id: 'register-email'
+- inputText: ${output.email}
+- tapOn:
+    id: 'register-fullname'
+- inputText: 'A1 Tester'
+- tapOn:
+    id: 'register-password'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-confirm'
+- inputText: ${output.password}
+- tapOn:
+    id: 'register-continue-account'
+
+- assertVisible: 'Step 02 — Style'
+- tapOn: 'Minimal'
+- tapOn:
+    id: 'register-continue-style'
+
+- assertVisible: 'Step 03 — Location'
+- tapOn:
+    id: 'register-city'
+- inputText: 'New York'
+- hideKeyboard
+- tapOn:
+    id: 'register-submit'
+
+# --- New user lands on the onboarding gate (after register → login → enrichment) ---
+# Run the Style DNA onboarding via the Skip path (photo pickers are native — not
+# Maestro-drivable): upload → skip → wardrobe capture → selfie skip → tabs.
+- extendedWaitUntil:
+    visible:
+      id: 'onboarding-upload-screen'
+    timeout: 25000
+- tapOn:
+    id: 'onboarding-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'capture-screen'
+    timeout: 15000
+- tapOn:
+    id: 'capture-continue'
+- extendedWaitUntil:
+    visible:
+      id: 'selfie-screen'
+    timeout: 15000
+- tapOn:
+    id: 'selfie-skip'
+
+# --- Tab shell (lands on Today) ---
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+
+# --- Sign out from the Profile tab (sign-out sits below the fold) ---
+- tapOn: 'PROFILE'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-screen'
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: 'sign-out'
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: 'sign-out'
+
+# --- Back to login; sign in again with the same account ---
+- extendedWaitUntil:
+    visible: 'Welcome back'
+    timeout: 15000
+- tapOn:
+    id: 'login-email'
+- inputText: ${output.email}
+- tapOn:
+    id: 'login-password'
+- inputText: ${output.password}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+
+# Already onboarded → straight to the tab shell
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000

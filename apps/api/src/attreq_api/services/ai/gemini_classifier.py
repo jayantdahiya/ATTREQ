@@ -1,31 +1,20 @@
 """Gemini API service for wardrobe classification with batch processing support."""
 
+import asyncio
 import base64
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from attreq_api.config.settings import settings
+from attreq_api.services.ai.prompt_text import CLASSIFICATION_PROMPT
+from attreq_api.services.ai.schema_mapper import map_classifier_result_to_wardrobe_schema
 
 logger = logging.getLogger(__name__)
-
-CLASSIFICATION_PROMPT = """You are a wardrobe classification expert. Analyze the clothing item in the image and return ONLY a JSON object with these exact fields:
-
-{
-  "category": "<specific type: shirt, jeans, dress, jacket, sweater, pants, coat, blouse, skirt, shorts, t-shirt, hoodie, blazer, cardigan, tank-top, polo, chinos, leggings, jumpsuit, romper>",
-  "color_primary": "<main color: black, white, blue, red, green, brown, beige, gray, navy, maroon, pink, purple, yellow, orange, tan, cream>",
-  "color_secondary": "<second color or null>",
-  "pattern": "<solid, striped, polka-dot, floral, plaid, checkered, paisley, geometric, abstract, printed, embroidered, textured>",
-  "season": ["<summer|winter|fall|spring|all>"],
-  "occasion": ["<casual|formal|business|party>"],
-  "detection_confidence": <0.0 to 1.0>,
-  "processing_status": "completed"
-}
-
-Return ONLY the JSON object, no markdown, no explanation."""
 
 
 class GeminiClassifierService:
@@ -45,7 +34,7 @@ class GeminiClassifierService:
             ValueError: If API key not configured or response invalid
             httpx.HTTPError: If API request fails
         """
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Gemini API key not configured")
@@ -67,7 +56,7 @@ class GeminiClassifierService:
         try:
             response = await self._make_api_request(payload)
             result = self._parse_response(response)
-            return self._map_to_wardrobe_schema(result)
+            return map_classifier_result_to_wardrobe_schema(result)
         except Exception as e:
             logger.error(f"Gemini single image classification failed: {str(e)}")
             raise
@@ -86,7 +75,7 @@ class GeminiClassifierService:
             raise ValueError(f"Too many images. Maximum batch size is {self.batch_size}")
 
         for path in image_paths:
-            if not Path(path).exists():
+            if not await asyncio.to_thread(os.path.exists, path):
                 raise FileNotFoundError(f"Image not found: {path}")
 
         try:
@@ -103,14 +92,14 @@ class GeminiClassifierService:
             if not isinstance(results, list):
                 results = [results]
 
-            return [self._map_to_wardrobe_schema(r) for r in results]
+            return [map_classifier_result_to_wardrobe_schema(r) for r in results]
         except Exception as e:
             logger.error(f"Gemini batch classification failed: {str(e)}")
             raise
 
     async def analyze_image(self, image_path: str, prompt: str) -> dict[str, Any]:
         """Call Gemini vision with a custom prompt. Returns raw JSON dict."""
-        if not Path(image_path).exists():
+        if not await asyncio.to_thread(os.path.exists, image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not self.api_key:
             raise ValueError("Gemini API key not configured")
@@ -193,18 +182,6 @@ class GeminiClassifierService:
             return json.loads(text)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in Gemini response: {e}") from e
-
-    def _map_to_wardrobe_schema(self, result: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "category": result.get("category"),
-            "color_primary": result.get("color_primary"),
-            "color_secondary": result.get("color_secondary"),
-            "pattern": result.get("pattern"),
-            "season": result.get("season", []),
-            "occasion": result.get("occasion", []),
-            "detection_confidence": result.get("detection_confidence", 0.0),
-            "processing_status": result.get("processing_status", "completed"),
-        }
 
 
 gemini_classifier_service = GeminiClassifierService()

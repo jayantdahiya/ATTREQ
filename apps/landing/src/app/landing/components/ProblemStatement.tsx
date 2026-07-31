@@ -1,25 +1,19 @@
-'use client';
-
-import { motion } from 'framer-motion';
 import { SectionWrapper } from './SectionWrapper';
 
 export function ProblemStatement() {
   return (
-    <SectionWrapper className="landing-section landing-problem">
+    <SectionWrapper className="landing-section">
       <div className="landing-problem__panel">
-        <motion.p className="landing-eyebrow" transition={{ delay: 0.02 }}>
-          THE PROBLEM
-        </motion.p>
-        <motion.p className="landing-problem__quote" transition={{ delay: 0.1 }}>
-          "The average person spends 17 minutes every morning deciding what to wear."
-        </motion.p>
-        <motion.p className="landing-problem__body" transition={{ delay: 0.18 }}>
-          Decision fatigue starts before your first sip of coffee. A full wardrobe should feel like freedom, but it
-          often feels like friction. ATTREQ turns cluttered options into clear recommendations built for your day.
-        </motion.p>
-      </div>
-      <div className="landing-panel">
-        <div className="landing-gold-divider" aria-hidden="true" />
+        <p className="landing-ml">The morning problem</p>
+        <blockquote className="landing-problem__quote">
+          A full closet and nothing to wear isn&rsquo;t a wardrobe problem.
+          It&rsquo;s a <span className="landing-em">decision</span> problem.
+        </blockquote>
+        <p className="landing-body landing-problem__body">
+          Most of us wear a fifth of what we own and stand in front of the rest
+          every morning. ATTREQ makes the decision for you — from your own
+          clothes, in your own taste, before you&rsquo;ve finished your coffee.
+        </p>
       </div>
     </SectionWrapper>
   );

@@ -1,71 +1,69 @@
-'use client';
-
-import { Aperture, Compass, BrainCircuit } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
 import { SectionWrapper } from './SectionWrapper';
 
-const featureCards = [
+const pieces = [
+  { cat: 'Top', color: 'Cream Linen', tone: 'var(--garment-top)' },
+  { cat: 'Bottom', color: 'Navy Wool', tone: 'var(--garment-bottom)' },
+  { cat: 'Outer', color: 'Camel Coat', tone: 'var(--garment-outer)' },
+  { cat: 'Scarf', color: 'Olive Silk', tone: 'var(--garment-accent)' },
+  { cat: 'Top', color: 'White Cotton', tone: 'var(--garment-top)' },
+  { cat: 'Shoes', color: 'Charcoal Tweed', tone: 'var(--garment-shoes)' },
+];
+
+const notes = [
   {
-    key: 'capture',
-    label: '01 - CAPTURE',
-    title: 'Snap. Upload. Done.',
-    body: 'Photograph your wardrobe and let AI handle the rest - detecting colors, categories, seasons, and occasions automatically.',
-    icon: Aperture,
+    tag: 'Weather-aware',
+    tagClass: 'landing-note__tag--moss',
+    title: 'Dressed for the forecast',
+    body: 'Looks are matched to the temperature and sky outside your door — linen on the warm days, wool when it turns.',
   },
   {
-    key: 'discover',
-    label: '02 - DISCOVER',
-    title: 'Your daily outfit, decided.',
-    body: 'Every morning, get a curated set of outfit suggestions based on weather, your calendar, and what you have not worn lately.',
-    icon: Compass,
+    tag: 'Style DNA',
+    tagClass: 'landing-note__tag--bronze',
+    title: 'Your taste, distilled',
+    body: 'Every wear and skip refines what ATTREQ knows about you. The looks get more yours each week.',
   },
   {
-    key: 'evolve',
-    label: '03 - EVOLVE',
-    title: 'It learns. You wear.',
-    body: 'Rate what you wear, dismiss what you do not. Every interaction makes your AI stylist sharper.',
-    icon: BrainCircuit,
+    tag: 'Private',
+    tagClass: 'landing-note__tag--clay',
+    title: 'Your closet stays yours',
+    body: 'Your wardrobe photos power your recommendations and nothing else. No feeds, no followers, no resale prompts.',
   },
 ];
 
 export function Features() {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <SectionWrapper className="landing-section landing-features">
-      <p className="landing-eyebrow">THE PILLARS</p>
-      <h2 className="landing-title">Three moves. One smarter wardrobe loop.</h2>
+    <SectionWrapper className="landing-section">
+      <div className="landing-wardrobe__head">
+        <p className="landing-ml landing-ml--bronze">The wardrobe</p>
+        <h2 className="landing-title">
+          Every piece, <span className="landing-em">catalogued.</span>
+        </h2>
+        <p className="landing-body">
+          Your closet becomes a browsable archive — each garment tagged by
+          category, color, and season the moment you photograph it.
+        </p>
+      </div>
 
-      <div className="landing-features__grid">
-        {featureCards.map((feature, index) => {
-          const Icon = feature.icon;
+      <div className="landing-wardrobe__strip">
+        {pieces.map((piece) => (
+          <div key={piece.color} className="landing-wardrobe__piece">
+            <div className="landing-wardrobe__swatch" style={{ background: piece.tone }} aria-hidden="true" />
+            <div className="landing-wardrobe__caption">
+              <span className="landing-wardrobe__cat">{piece.cat}</span>
+              <span className="landing-ml">{piece.color}</span>
+            </div>
+          </div>
+        ))}
+      </div>
 
-          return (
-            <motion.article
-              key={feature.key}
-              className="landing-features__card"
-              initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 46 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.35 }}
-              transition={
-                reduceMotion
-                  ? { duration: 0 }
-                  : {
-                      duration: 0.84,
-                      delay: 0.12 * index,
-                      ease: [0.25, 0.46, 0.45, 0.94],
-                    }
-              }
-            >
-              <div className="landing-features__icon">
-                <Icon size={20} aria-hidden="true" />
-              </div>
-              <p className="landing-label">{feature.label}</p>
-              <h3 className="landing-features__headline">{feature.title}</h3>
-              <p className="landing-features__body">{feature.body}</p>
-            </motion.article>
-          );
-        })}
+      <div className="landing-notes">
+        {notes.map((note) => (
+          <div key={note.tag} className="landing-note">
+            <span className={`landing-note__tag ${note.tagClass}`}>{note.tag}</span>
+            <h3 className="landing-note__title">{note.title}</h3>
+            <p className="landing-note__body">{note.body}</p>
+          </div>
+        ))}
       </div>
     </SectionWrapper>
   );

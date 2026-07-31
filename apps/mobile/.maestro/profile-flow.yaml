@@ -1,0 +1,101 @@
+appId: com.attreq.mobile
+# EMAIL / PASSWORD provided at run time via `maestro test -e EMAIL=... -e PASSWORD=...`.
+# The seeded user should ideally have >=1 wardrobe item so the stats screen shows
+# content; a fresh user still passes (the stats screen renders its empty state and
+# the profile stat tiles show "—"). This flow asserts structure, not specific numbers.
+---
+# A5 Profile smoke: log in → Profile tab renders (identity + stats tiles + Style DNA
+# row + reminder toggle) → open Wardrobe Stats → back → open "How recommendations
+# work" → back → toggle the daily reminder → sign out → back at the login screen.
+- launchApp:
+    clearState: true
+- assertVisible: 'Welcome back'
+- tapOn:
+    id: 'login-email'
+- inputText: ${EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+
+# Lands on the tab shell.
+- extendedWaitUntil:
+    visible:
+      id: 'main-tabs'
+    timeout: 20000
+
+# Go to the Profile tab.
+- tapOn: 'PROFILE'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-screen'
+    timeout: 15000
+
+# Identity + stats tiles, Style DNA row and the daily-reminder toggle all render.
+- assertVisible:
+    id: 'profile-stats-row'
+- assertVisible:
+    id: 'profile-style-dna-row'
+- assertVisible:
+    id: 'reminder-toggle'
+
+# Open Wardrobe Stats -> assert the stats screen -> back to Profile.
+- scrollUntilVisible:
+    element:
+      id: 'profile-row-stats'
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: 'profile-row-stats'
+- extendedWaitUntil:
+    visible:
+      id: 'stats-screen'
+    timeout: 15000
+- tapOn:
+    id: 'stats-back'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-screen'
+    timeout: 10000
+
+# Open "How recommendations work" -> assert -> back to Profile.
+- scrollUntilVisible:
+    element:
+      id: 'profile-row-how-it-works'
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: 'profile-row-how-it-works'
+- extendedWaitUntil:
+    visible:
+      id: 'how-it-works-screen'
+    timeout: 15000
+- tapOn:
+    id: 'how-it-works-back'
+- extendedWaitUntil:
+    visible:
+      id: 'profile-screen'
+    timeout: 10000
+
+# Toggle the daily reminder (persisted preference; OS scheduling deferred).
+- scrollUntilVisible:
+    element:
+      id: 'reminder-toggle'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'reminder-toggle'
+
+# Sign out -> back at the login screen.
+- scrollUntilVisible:
+    element:
+      id: 'sign-out'
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: 'sign-out'
+- extendedWaitUntil:
+    visible: 'Welcome back'
+    timeout: 15000

@@ -97,10 +97,42 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
     upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
 
+    # Object storage settings ("local" disk or "s3"-compatible, e.g. Cloudflare R2)
+    storage_backend: str = Field(default="local", alias="STORAGE_BACKEND")
+    s3_endpoint_url: str | None = Field(default=None, alias="S3_ENDPOINT_URL")
+    s3_bucket: str | None = Field(default=None, alias="S3_BUCKET")
+    s3_access_key_id: str | None = Field(default=None, alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str | None = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
+
     # Style DNA settings
     style_dna_min_photos: int = Field(default=3, alias="STYLE_DNA_MIN_PHOTOS")
     style_dna_max_photos: int = Field(default=8, alias="STYLE_DNA_MAX_PHOTOS")
     style_dna_llm_concurrency: int = Field(default=3, alias="STYLE_DNA_LLM_CONCURRENCY")
+
+    # RI-3: personal-color selfie estimation — opt-in, feature-flagged. When
+    # disabled the endpoint 404s; when enabled it still requires explicit
+    # per-request consent (see `POST /users/style-dna/selfie`). Off by default
+    # because the face photo is transmitted to a third-party LLM vendor.
+    enable_personal_color_selfie: bool = Field(default=False, alias="ENABLE_PERSONAL_COLOR_SELFIE")
+
+    # Wardrobe batch upload settings
+    wardrobe_batch_upload_max_files: int = Field(
+        default=20, alias="WARDROBE_BATCH_UPLOAD_MAX_FILES"
+    )
+    wardrobe_batch_processing_concurrency: int = Field(
+        default=3, alias="WARDROBE_BATCH_PROCESSING_CONCURRENCY"
+    )
+
+    # RI-6: FashionCLIP embeddings + optional LLM re-ranker. `embeddings_enabled`
+    # defaults FALSE — the checkpoint drags in torch (~600MB-2GB depending on
+    # platform) which may not be installable/runnable in every environment (CI
+    # always sets this false). When false, every embedding/centroid/propagation
+    # code path is a no-op and scoring behaves exactly as pre-RI-6.
+    embeddings_enabled: bool = Field(default=False, alias="EMBEDDINGS_ENABLED")
+    reranker_enabled: bool = Field(default=False, alias="RERANKER_ENABLED")
+    # Optional second whole-set LLM call (reversed candidate order) as a
+    # position-bias tie-break check — see services/recommendation/reranker.py.
+    reranker_both_order: bool = Field(default=False, alias="RERANKER_BOTH_ORDER")
 
     @validator("backend_cors_origins", pre=True)
     def assemble_cors_origins(cls, v):

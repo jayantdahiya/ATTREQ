@@ -1,82 +1,42 @@
-'use client';
-
-import { motion, useInView, useReducedMotion } from 'framer-motion';
-import { useRef } from 'react';
+import { SectionWrapper } from './SectionWrapper';
 
 const steps = [
   {
-    title: 'Photograph your clothes',
-    body: 'Open the app, point your camera, and capture each piece. AI identifies what it is instantly.',
+    no: 'No. 01',
+    title: 'Photograph your closet',
+    body: 'Point your camera at each piece, or pick from your photo library. ATTREQ recognizes the garment, its color, and its category, and files it into your digital wardrobe.',
   },
   {
-    title: 'Get daily suggestions',
-    body: 'Every morning, open ATTREQ for a fresh set of outfits tailored to your day.',
+    no: 'No. 02',
+    title: 'Teach it your taste',
+    body: 'Upload a handful of outfits you love — yours or anyone’s. ATTREQ distills them into your Style DNA: the silhouettes, palettes, and moods you actually reach for.',
   },
   {
-    title: 'Wear and rate',
-    body: 'Put it on. Loved it? Tell us. Not feeling it? Skip and the system adapts.',
-  },
-  {
-    title: 'Watch it get smarter',
-    body: 'Your feedback loop compounds. Each day, recommendations become a better fit.',
+    no: 'No. 03',
+    title: 'Get dressed',
+    body: 'Each morning you get three looks composed from your own clothes and matched to the day’s weather. Wear one or skip it — every choice sharpens tomorrow’s looks.',
   },
 ];
 
 export function HowItWorks() {
-  const ref = useRef<HTMLElement | null>(null);
-  const isInView = useInView(ref, { once: true, margin: '-120px 0px' });
-  const reduceMotion = useReducedMotion();
-
   return (
-    <section ref={ref} className="landing-section landing-works">
-      <motion.div
-        initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 36 }}
-        animate={isInView ? { opacity: 1, y: 0 } : reduceMotion ? { opacity: 1, y: 0 } : {}}
-        transition={reduceMotion ? { duration: 0 } : { duration: 0.84, ease: [0.25, 0.46, 0.45, 0.94] }}
-      >
-        <p className="landing-eyebrow">HOW IT WORKS</p>
-        <h2 className="landing-title">A ritual built for mornings that move fast.</h2>
+    <SectionWrapper className="landing-section" id="how-it-works">
+      <div className="landing-works__intro">
+        <p className="landing-ml landing-ml--bronze">How it works</p>
+        <h2 className="landing-title">
+          Three steps, then it&rsquo;s <span className="landing-em">effortless.</span>
+        </h2>
+      </div>
 
-        <div className="landing-works__timeline">
-          <motion.div
-            className="landing-works__line"
-            initial={reduceMotion ? { scaleY: 1 } : { scaleY: 0 }}
-            animate={isInView ? { scaleY: 1 } : reduceMotion ? { scaleY: 1 } : { scaleY: 0 }}
-            transition={reduceMotion ? { duration: 0 } : { duration: 1.1, delay: 0.12 }}
-            aria-hidden="true"
-          />
-
-          {steps.map((step, index) => (
-            <motion.article
-              key={step.title}
-              className="landing-works__step"
-              initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 34 }}
-              animate={
-                isInView
-                  ? { opacity: 1, y: 0 }
-                  : reduceMotion
-                    ? { opacity: 1, y: 0 }
-                    : {}
-              }
-              transition={
-                reduceMotion
-                  ? { duration: 0 }
-                  : {
-                      duration: 0.78,
-                      delay: 0.16 + index * 0.1,
-                      ease: [0.25, 0.46, 0.45, 0.94],
-                    }
-              }
-            >
-              <div className="landing-works__number">{index + 1}</div>
-              <div className="landing-works__step-card">
-                <h3 className="landing-works__step-title">{step.title}</h3>
-                <p className="landing-works__step-body">{step.body}</p>
-              </div>
-            </motion.article>
-          ))}
-        </div>
-      </motion.div>
-    </section>
+      <div className="landing-works__docket">
+        {steps.map((step) => (
+          <div key={step.no} className="landing-works__step">
+            <span className="landing-works__no">{step.no}</span>
+            <h3 className="landing-works__step-title">{step.title}</h3>
+            <p className="landing-works__step-body">{step.body}</p>
+          </div>
+        ))}
+      </div>
+    </SectionWrapper>
   );
 }

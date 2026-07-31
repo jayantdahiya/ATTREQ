@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import sentry_sdk
 from fastapi import FastAPI
@@ -66,8 +67,11 @@ app.add_middleware(
 if settings.app_env == "production":
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 
-# Mount static files directory for uploads
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Mount static files directory for uploads (local disk storage only —
+# S3 storage serves images via presigned URLs instead)
+if settings.storage_backend == "local":
+    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 # Include API router
 app.include_router(api_router, prefix="/api/v1")

@@ -1,11 +1,25 @@
-module.exports = function (api) {
-  api.cache(true)
-
-  return {
-    presets: [
-      ['babel-preset-expo', { jsxImportSource: 'nativewind' }],
-      'nativewind/babel'
+module.exports = {
+  presets: ['@react-native/babel-preset'],
+  plugins: [
+    [
+      'module-resolver',
+      {
+        root: ['./src'],
+        alias: { '@': './src' },
+        extensions: [
+          '.ios.ts',
+          '.android.ts',
+          '.ts',
+          '.ios.tsx',
+          '.android.tsx',
+          '.tsx',
+          '.jsx',
+          '.js',
+          '.json',
+        ],
+      },
     ],
-    plugins: ['react-native-reanimated/plugin'],
-  }
-}
+    // Reanimated 4 ships its Babel plugin from react-native-worklets; MUST be last.
+    'react-native-worklets/plugin',
+  ],
+};

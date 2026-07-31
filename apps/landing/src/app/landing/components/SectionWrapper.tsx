@@ -5,16 +5,17 @@ import { motion, useInView, useReducedMotion } from 'framer-motion';
 
 type SectionWrapperProps = {
   className?: string;
+  id?: string;
   children: React.ReactNode;
 };
 
-export function SectionWrapper({ className, children }: SectionWrapperProps) {
+export function SectionWrapper({ className, id, children }: SectionWrapperProps) {
   const ref = useRef<HTMLElement | null>(null);
   const isInView = useInView(ref, { once: true, margin: '-120px 0px' });
   const reduceMotion = useReducedMotion();
 
   return (
-    <section ref={ref} className={className}>
+    <section ref={ref} className={className} id={id}>
       <motion.div
         initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 36 }}
         animate={

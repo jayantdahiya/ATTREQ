@@ -1,73 +1,74 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ArrowDown } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { appLoginUrl } from '@/lib/urls';
+import { PhoneMock } from './PhoneMock';
 
 export function Hero() {
   const reduceMotion = useReducedMotion();
 
-  const transition = reduceMotion
-    ? { duration: 0 }
-    : { duration: 0.8, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] };
+  const rise = (delay: number) => ({
+    initial: reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 },
+    animate: { opacity: 1, y: 0 },
+    transition: reduceMotion
+      ? { duration: 0 }
+      : { duration: 0.8, ease: [0.25, 0.46, 0.45, 0.94] as const, delay },
+  });
 
   return (
     <header className="landing-hero">
       <div className="landing-topbar">
-        <motion.p
-          className="landing-wordmark"
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={transition}
-        >
+        <motion.p className="landing-wordmark" {...rise(0)}>
           ATTREQ
         </motion.p>
-        <motion.div
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? { duration: 0 } : { ...transition, delay: 0.1 }}
-        >
-          <Link href={appLoginUrl} className="landing-topbar__link">
-            Try ATTREQ <ArrowRight size={14} aria-hidden="true" />
+        <motion.div {...rise(0.08)}>
+          <Link href={appLoginUrl} className="landing-ghost-link">
+            Open the app <ArrowRight size={13} aria-hidden="true" />
           </Link>
         </motion.div>
       </div>
 
-      <div className="landing-hero__ambient" aria-hidden="true">
-        <div className="landing-gradient-blob landing-gradient-blob--teal landing-gradient-blob--hero-teal" />
-        <div className="landing-gradient-blob landing-gradient-blob--gold landing-gradient-blob--hero-gold" />
-      </div>
-
-      <div className="landing-hero__content">
-        <motion.h1
-          className="landing-display"
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? { duration: 0 } : { ...transition, delay: 0.18 }}
-        >
-          Your closet, curated.
-        </motion.h1>
-
-        <motion.p
-          className="landing-subtitle landing-hero__subtext"
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? { duration: 0 } : { ...transition, delay: 0.28 }}
-        >
-          AI-powered outfit suggestions that learn your style, so your mornings do not have to be a struggle.
+      <div className="landing-hero__copy">
+        <motion.p className="landing-ml landing-ml--bronze" {...rise(0.14)}>
+          Your closet, curated
         </motion.p>
 
-        <motion.div
-          initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? { duration: 0 } : { ...transition, delay: 0.36 }}
-        >
-          <Link href={appLoginUrl} className="landing-cta" aria-label="Get started with ATTREQ">
-            Get Started
+        <motion.h1 className="landing-display" {...rise(0.22)}>
+          Your best outfit is <span className="landing-em">already hanging</span> in your closet.
+        </motion.h1>
+
+        <motion.p className="landing-body landing-hero__sub" {...rise(0.3)}>
+          ATTREQ learns your taste from the outfits you love, checks the morning&rsquo;s
+          weather, and lays out looks made only from clothes you own. No shopping,
+          no stylists — just your wardrobe, finally working for you.
+        </motion.p>
+
+        <motion.div className="landing-hero__actions" {...rise(0.38)}>
+          <Link href={appLoginUrl} className="landing-cta">
+            Get started
           </Link>
+          <a href="#how-it-works" className="landing-ghost-link">
+            How it works <ArrowDown size={13} aria-hidden="true" />
+          </a>
         </motion.div>
       </div>
+
+      <motion.div
+        className="landing-hero__stage"
+        initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 36 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={
+          reduceMotion
+            ? { duration: 0 }
+            : { duration: 1, ease: [0.25, 0.46, 0.45, 0.94], delay: 0.3 }
+        }
+      >
+        <div className="landing-hero__swatch landing-hero__swatch--a" aria-hidden="true" />
+        <div className="landing-hero__swatch landing-hero__swatch--b" aria-hidden="true" />
+        <PhoneMock />
+      </motion.div>
     </header>
   );
 }

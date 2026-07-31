@@ -1,0 +1,24 @@
+included:
+  - ATTREQ
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - contains_over_first_not_nil
+  - redundant_nil_coalescing
+  - sorted_first_last
+disabled_rules:
+  - todo
+  - trailing_comma
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+identifier_name:
+  min_length: 1
+  max_length: 50
+type_body_length:
+  warning: 400
+file_length:
+  warning: 600
+nesting:
+  type_level: 3

@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - attreq_network
     healthcheck:
@@ -29,7 +29,7 @@ services:
     container_name: attreq_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - attreq_network
     healthcheck:
@@ -131,12 +131,21 @@ services:
       # File Upload Settings
       MAX_UPLOAD_SIZE_MB: 10
       UPLOAD_DIR: /app/uploads
+
+      # RI-6: FashionCLIP embeddings — off by default (torch/model download
+      # is a heavy opt-in; see config/settings.py and services/ai/
+      # fashion_embeddings.py). HF_HOME persists the checkpoint across
+      # container restarts, mirroring the rembg_cache pattern below.
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      RERANKER_ENABLED: ${RERANKER_ENABLED:-false}
+      HF_HOME: /root/.cache/huggingface
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ../../apps/api:/app
       - ../../apps/api/uploads:/app/uploads
       - rembg_cache:/root/.u2net
+      - hf_cache:/root/.cache/huggingface
     networks:
       - attreq_network
     depends_on:
@@ -168,6 +177,8 @@ volumes:
   weaviate_backups:
     driver: local
   rembg_cache:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:

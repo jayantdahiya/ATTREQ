@@ -1,33 +1,36 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Playfair_Display, Syne } from "next/font/google";
+import { Cormorant_Garamond, DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./landing.css";
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const cormorant = Cormorant_Garamond({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
+const dmSans = DM_Sans({
+  variable: "--font-body",
   subsets: ["latin"],
   display: "swap",
 });
 
-const syne = Syne({
-  variable: "--font-syne",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
-  display: "swap",
-});
-
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
+  weight: ["400", "500"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "ATTREQ - Your Closet, Curated",
+  title: "ATTREQ — Your closet, curated",
   description:
-    "AI-powered outfit suggestions that learn your style. Capture your wardrobe, get daily recommendations, and simplify your mornings.",
+    "ATTREQ learns your taste, checks the weather, and lays out morning looks made only from clothes you already own.",
   openGraph: {
-    title: "ATTREQ - Your Closet, Curated",
+    title: "ATTREQ — Your closet, curated",
     description:
-      "AI-powered outfit suggestions that learn your style. Capture your wardrobe, get daily recommendations, and simplify your mornings.",
+      "ATTREQ learns your taste, checks the weather, and lays out morning looks made only from clothes you already own.",
     type: "website",
   },
 };
@@ -38,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${playfair.variable} ${syne.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${cormorant.variable} ${dmSans.variable} ${plexMono.variable}`}>
       <body>
         {children}
       </body>

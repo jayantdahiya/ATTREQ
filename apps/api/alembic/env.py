@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -8,11 +9,24 @@ from alembic import context
 
 # Import our models and Base
 from attreq_api.config.database import Base
-from attreq_api.models import outfit, user, wardrobe  # noqa: F401
+from attreq_api.models import (  # noqa: F401
+    outfit,
+    recommendation_event,
+    style_dna,
+    user,
+    user_event,
+    wardrobe,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Prefer DATABASE_URL from the environment (e.g. CI, deployments) over the
+# alembic.ini default. Escape '%' so ConfigParser interpolation stays safe.
+_db_url = os.getenv("DATABASE_URL")
+if _db_url:
+    config.set_main_option("sqlalchemy.url", _db_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

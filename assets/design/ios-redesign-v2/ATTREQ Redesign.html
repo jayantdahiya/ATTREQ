@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ATTREQ — Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:#111;}
+#root{width:100%;height:100%;}
+::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Fonts ─────────────────────────────────────────────────────────────────
+const F = {
+  display: `"Cormorant Garamond", Georgia, serif`,
+  body: `"DM Sans", system-ui, sans-serif`,
+  mono: `"IBM Plex Mono", "Courier New", monospace`,
+};
+
+// ── Themes ────────────────────────────────────────────────────────────────
+// ── Noir green palette variants (accentMoss + accentOlive pairs) ──────────
+const NOIR_GREENS = {
+  forest:  { name:'Forest',   accentMoss:'#3D7255', accentOlive:'#7A9962', borderSubtle:'#1F2B24', bgSurface:'#141D19', bgRaised:'#1C2923', mossSoft:'rgba(61,114,85,0.22)',  glowMoss:'rgba(61,114,85,0.09)'  },
+  sage:    { name:'Sage',     accentMoss:'#5C8C72', accentOlive:'#8FB89A', borderSubtle:'#1D2922', bgSurface:'#141C18', bgRaised:'#1B2620', mossSoft:'rgba(92,140,114,0.20)', glowMoss:'rgba(92,140,114,0.08)' },
+  hunter:  { name:'Hunter',   accentMoss:'#2E5E48', accentOlive:'#5E8A6E', borderSubtle:'#1A2920', bgSurface:'#111A16', bgRaised:'#18261E', mossSoft:'rgba(46,94,72,0.24)',   glowMoss:'rgba(46,94,72,0.10)'   },
+  teal:    { name:'Teal',     accentMoss:'#2E7065', accentOlive:'#5E9E94', borderSubtle:'#182926', bgSurface:'#111C1A', bgRaised:'#172523', mossSoft:'rgba(46,112,101,0.22)', glowMoss:'rgba(46,112,101,0.09)' },
+  muted:   { name:'Muted',    accentMoss:'#526B5C', accentOlive:'#84997A', borderSubtle:'#1E2922', bgSurface:'#141B18', bgRaised:'#1B2520', mossSoft:'rgba(82,107,92,0.20)',  glowMoss:'rgba(82,107,92,0.08)'  },
+};
+
+const THEMES = {
+  noir: {
+    name:'Noir',
+    bgDeep:'#0D1210', bgSurface:'#141D19', bgRaised:'#1C2923', bgSunk:'#090D0B',
+    accentMoss:'#3D7255', accentOlive:'#7A9962', accentGold:'#D4A854', accentClay:'#C9604A',
+    textPrimary:'#F0EDE6', textSecondary:'#9B978E', textTertiary:'#5C5850',
+    borderSubtle:'#1F2B24', borderSoft:'rgba(240,237,230,0.07)',
+    mossSoft:'rgba(61,114,85,0.22)', goldSoft:'rgba(212,168,84,0.18)',
+    glowMoss:'rgba(61,114,85,0.09)', glowGold:'rgba(212,168,84,0.07)',
+    navBg:'rgba(20,29,25,0.95)', cardBg:'rgba(28,41,35,0.82)', isDark:true,
+  },
+  cream: {
+    name:'Cream',
+    bgDeep:'#EEE8DC', bgSurface:'#F5F0E8', bgRaised:'#FFFFFF', bgSunk:'#E5DFD0',
+    accentMoss:'#2F5A40', accentOlive:'#5A7344', accentGold:'#A8842F', accentClay:'#A8492F',
+    textPrimary:'#1C2219', textSecondary:'#6A6659', textTertiary:'#9A9689',
+    borderSubtle:'rgba(28,34,25,0.10)', borderSoft:'rgba(28,34,25,0.07)',
+    mossSoft:'rgba(47,90,64,0.12)', goldSoft:'rgba(168,132,47,0.16)',
+    glowMoss:'rgba(47,90,64,0.05)', glowGold:'rgba(168,132,47,0.06)',
+    navBg:'rgba(255,255,255,0.94)', cardBg:'rgba(255,255,255,0.88)', isDark:false,
+  },
+  slate: {
+    name:'Slate',
+    bgDeep:'#EDEEF2', bgSurface:'#F4F5F8', bgRaised:'#FFFFFF', bgSunk:'#E0E2E8',
+    accentMoss:'#2D6B4F', accentOlive:'#507A55', accentGold:'#B8922A', accentClay:'#B85040',
+    textPrimary:'#18202A', textSecondary:'#5A6475', textTertiary:'#8A94A5',
+    borderSubtle:'rgba(24,32,42,0.10)', borderSoft:'rgba(24,32,42,0.07)',
+    mossSoft:'rgba(45,107,79,0.12)', goldSoft:'rgba(184,146,42,0.15)',
+    glowMoss:'rgba(45,107,79,0.06)', glowGold:'rgba(184,146,42,0.05)',
+    navBg:'rgba(255,255,255,0.95)', cardBg:'rgba(255,255,255,0.92)', isDark:false,
+  },
+};
+
+// ── Tweaks defaults ────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "showRegister": true,
+  "showLocation": true
+}/*EDITMODE-END*/;
+
+// ── Micro atoms ───────────────────────────────────────────────────────────
+function ML({ children, color, style, size=9 }) {
+  return <span style={{ fontFamily:F.mono, fontSize:size, fontWeight:500, letterSpacing:'0.16em', textTransform:'uppercase', color:color||'inherit', ...style }}>{children}</span>;
+}
+
+function Divider({ color, style }) {
+  return <div style={{ height:1, background:color||'rgba(255,255,255,0.07)', width:'100%', ...style }} />;
+}
+
+function GarmentTile({ tone='top', label, style }) {
+  const P = { top:['#2A3A30','#1E2E24','#6F8B57'], bottom:['#2A2418','#1E1A10','#8A6F4A'], accent:['#3A2A1E','#2A1E14','#C9604A'], shoes:['#1A1A16','#111110','#5C5850'], outer:['#2E2A22','#221E16','#D4A854'] };
+  const [a,b,c] = P[tone]||P.top;
+  return (
+    <div style={{ borderRadius:14, overflow:'hidden', background:`linear-gradient(135deg,${a},${b})`, position:'relative', ...style }}>
+      <div style={{ position:'absolute', top:9, right:9, width:5, height:5, borderRadius:'50%', background:c, opacity:0.75 }} />
+      {label && (
+        <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'linear-gradient(transparent,rgba(0,0,0,0.62))', padding:'18px 10px 8px' }}>
+          <ML style={{ color:'#F0EDE6' }}>{label}</ML>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Card({ children, t, onClick, style, accent, dashed }) {
+  return (
+    <div onClick={onClick} style={{ background:t.cardBg, border:`1px ${dashed?'dashed':'solid'} ${t.borderSoft}`, borderRadius:22, overflow:'hidden', position:'relative', boxShadow:`0 8px 32px rgba(0,0,0,${t.isDark?'0.28':'0.06'})`, cursor:onClick?'pointer':'default', ...style }}>
+      {accent && <div style={{ position:'absolute', top:0, left:20, right:20, height:2, background:accent==='gold'?t.accentGold:accent==='moss'?t.accentMoss:t.accentClay, borderRadius:'0 0 2px 2px' }} />}
+      {children}
+    </div>
+  );
+}
+
+function Pill({ children, variant='muted', t }) {
+  const pal = { gold:{bg:t.goldSoft,c:t.accentGold,b:'transparent'}, moss:{bg:t.mossSoft,c:t.accentOlive,b:'transparent'}, clay:{bg:'transparent',c:t.accentClay,b:t.accentClay}, muted:{bg:'transparent',c:t.textTertiary,b:t.borderSubtle} }[variant]||{bg:'transparent',c:t.textTertiary,b:t.borderSubtle};
+  return <span style={{ background:pal.bg, color:pal.c, border:`1px solid ${pal.b}`, borderRadius:100, padding:'3px 10px', fontFamily:F.mono, fontSize:8, letterSpacing:'0.14em', textTransform:'uppercase', fontWeight:500 }}>{children}</span>;
+}
+
+function IconBtn({ children, t, onClick, size=36 }) {
+  return <div onClick={onClick} style={{ width:size, height:size, borderRadius:'50%', background:t.bgSurface, border:`1px solid ${t.borderSoft}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>{children}</div>;
+}
+
+// Icons
+function Ic({ n, s=18, c='currentColor' }) {
+  const d = {
+    sun:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>,
+    shirt:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.57a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.57a2 2 0 00-1.34-2.23z"/></svg>,
+    albums:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 2H8l-2 5h12l-2-5z"/></svg>,
+    person:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>,
+    location:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>,
+    refresh:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>,
+    heart:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>,
+    x:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    check:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>,
+    camera:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+    images:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="5" width="16" height="14" rx="2"/><path d="M22 3H8"/><path d="M2 9l5 5 4-4 4 5"/></svg>,
+    search:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+    bell:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
+    chev:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>,
+    cloud:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>,
+    menu:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
+    eye:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+    logout:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+    arrowR:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
+    arrowL:<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
+  };
+  return d[n]||null;
+}
+
+function Btn({ label, icon, variant='primary', t, onClick, style, full }) {
+  const pal = { primary:{bg:t.accentMoss,b:t.accentMoss,c:'#F0EDE6'}, secondary:{bg:t.bgRaised,b:t.borderSubtle,c:t.textPrimary}, ghost:{bg:'transparent',b:'transparent',c:t.accentGold}, premium:{bg:t.accentGold,b:t.accentGold,c:'#1A1208'}, danger:{bg:'transparent',b:t.accentClay,c:t.accentClay} }[variant]||{bg:t.accentMoss,b:t.accentMoss,c:'#F0EDE6'};
+  return <div onClick={onClick} style={{ background:pal.bg, border:`1px solid ${pal.b}`, color:pal.c, borderRadius:14, padding:'11px 18px', minHeight:44, display:'flex', alignItems:'center', justifyContent:'center', gap:7, fontFamily:F.body, fontSize:14, fontWeight:600, cursor:'pointer', width:full?'100%':undefined, ...style }}>{icon&&<span style={{display:'flex'}}>{icon}</span>}{label}</div>;
+}
+
+function Inp({ label, type='text', placeholder, t }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+      <ML color={t.textTertiary}>{label}</ML>
+      <div style={{borderBottom:`1.5px solid ${t.borderSubtle}`,padding:'8px 0'}}>
+        <input type={type} placeholder={placeholder||''} style={{background:'transparent',border:'none',outline:'none',color:t.textPrimary,fontFamily:F.body,fontSize:15,width:'100%'}} />
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ on, t }) {
+  return <div style={{width:42,height:24,borderRadius:100,background:on?t.accentMoss:t.borderSubtle,position:'relative',cursor:'pointer'}}><div style={{position:'absolute',top:3,left:on?21:3,width:18,height:18,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}} /></div>;
+}
+
+// ── iOS bezel ────────────────────────────────────────────────────────────
+function IosFrame({ children, dark }) {
+  const fg = dark?'#fff':'#000';
+  return (
+    <div style={{ width:390, height:844, borderRadius:50, overflow:'hidden', position:'relative', background:dark?'#0D1210':'#EEE8DC', boxShadow:'0 40px 80px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.14)', flexShrink:0 }}>
+      {/* Dynamic island */}
+      <div style={{position:'absolute',top:12,left:'50%',transform:'translateX(-50%)',width:120,height:34,borderRadius:22,background:'#000',zIndex:60}} />
+      {/* Status bar */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:54,display:'flex',alignItems:'flex-start',justifyContent:'space-between',padding:'18px 28px 0',zIndex:50,pointerEvents:'none'}}>
+        <span style={{fontFamily:'-apple-system,system-ui',fontWeight:600,fontSize:15,color:fg}}>9:41</span>
+        <div style={{display:'flex',gap:6,alignItems:'center',marginTop:1}}>
+          <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="6" width="3" height="5" rx="0.7" fill={fg}/><rect x="4.5" y="4" width="3" height="7" rx="0.7" fill={fg}/><rect x="9" y="2" width="3" height="9" rx="0.7" fill={fg}/><rect x="13.5" y="0" width="3" height="11" rx="0.7" fill={fg}/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11"><path d="M7.5 2.8C9.5 2.8 11.2 3.6 12.5 4.9L13.5 3.9C11.8 2.3 9.8 1.3 7.5 1.3C5.2 1.3 3.2 2.3 1.5 3.9L2.5 4.9C3.8 3.6 5.5 2.8 7.5 2.8Z" fill={fg}/><path d="M7.5 6C8.7 6 9.7 6.4 10.5 7.1L11.5 6.1C10.3 5 9 4.5 7.5 4.5C6 4.5 4.7 5 3.5 6.1L4.5 7.1C5.3 6.4 6.3 6 7.5 6Z" fill={fg}/><circle cx="7.5" cy="9.5" r="1.5" fill={fg}/></svg>
+          <svg width="24" height="12" viewBox="0 0 24 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.2" stroke={fg} strokeOpacity="0.35" fill="none"/><rect x="2" y="2" width="17" height="8" rx="2" fill={fg}/><path d="M23 4V8C23.8 7.7 24.5 6.8 24.5 6C24.5 5.2 23.8 4.3 23 4Z" fill={fg} fillOpacity="0.4"/></svg>
+        </div>
+      </div>
+      {/* Content */}
+      <div style={{width:'100%',height:'100%',overflow:'hidden'}}>
+        {children}
+      </div>
+      {/* Home indicator */}
+      <div style={{position:'absolute',bottom:8,left:'50%',transform:'translateX(-50%)',width:134,height:5,borderRadius:100,background:dark?'rgba(255,255,255,0.65)':'rgba(0,0,0,0.22)',zIndex:60,pointerEvents:'none'}} />
+    </div>
+  );
+}
+
+// ── Tab bar ──────────────────────────────────────────────────────────────
+function TabBar({ active, onTab, t }) {
+  const tabs = [{id:'today',label:'Today',icon:'sun'},{id:'wardrobe',label:'Wardrobe',icon:'shirt'},{id:'history',label:'History',icon:'albums'},{id:'profile',label:'Profile',icon:'person'}];
+  return (
+    <div style={{position:'absolute',bottom:20,left:12,right:12,background:t.navBg,backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderRadius:26,border:`1px solid ${t.borderSoft}`,boxShadow:`0 16px 48px rgba(0,0,0,${t.isDark?'0.45':'0.12'})`,padding:'8px 6px',display:'flex',alignItems:'center',zIndex:50}}>
+      {tabs.map(tab=>{
+        const on=active===tab.id;
+        return <div key={tab.id} onClick={()=>onTab(tab.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3,padding:'4px 10px',borderRadius:18,cursor:'pointer',background:on?t.mossSoft:'transparent',transition:'background 0.2s'}}>
+          <Ic n={tab.icon} s={20} c={on?t.accentMoss:t.textTertiary} />
+          <ML size={7.5} style={{color:on?t.accentMoss:t.textTertiary,letterSpacing:'0.12em'}}>{tab.label}</ML>
+        </div>;
+      })}
+    </div>
+  );
+}
+
+// ── LOGIN ────────────────────────────────────────────────────────────────
+function LoginScreen({ t, nav }) {
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,position:'relative',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:400,background:`linear-gradient(180deg,${t.bgSurface},${t.bgDeep})`,opacity:0.72,pointerEvents:'none'}} />
+      {[0,1,2,3].map(i=><div key={i} style={{position:'absolute',left:`${18+i*22}%`,top:0,bottom:0,width:1,background:`linear-gradient(180deg,transparent,${t.borderSoft} 40%,transparent)`,opacity:0.5,pointerEvents:'none'}} />)}
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',padding:'60px 28px 36px',position:'relative',zIndex:1}}>
+        <div style={{textAlign:'center',paddingTop:20}}>
+          <ML color={t.textTertiary} style={{display:'block',marginBottom:16}}>est. 2026 — personal styling</ML>
+          <div style={{fontFamily:F.display,fontSize:56,fontWeight:600,letterSpacing:'0.16em',color:t.accentGold,lineHeight:1,marginBottom:10}}>ATTREQ</div>
+          <div style={{fontFamily:F.display,fontSize:20,fontStyle:'italic',color:t.textSecondary,fontWeight:400}}>Your closet, curated.</div>
+        </div>
+        <Card t={t} accent="gold" style={{padding:'28px 24px'}}>
+          <div style={{marginBottom:20}}>
+            <div style={{fontFamily:F.display,fontSize:24,fontWeight:600,color:t.textPrimary,marginBottom:4}}>Welcome back</div>
+            <div style={{fontFamily:F.body,fontSize:13,color:t.textSecondary}}>Sign in to your wardrobe.</div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
+            <Inp label="Email" type="email" placeholder="you@example.com" t={t} />
+            <Inp label="Password" type="password" placeholder="••••••••" t={t} />
+          </div>
+          <div style={{marginTop:24}}><Btn label="Sign in" t={t} full onClick={()=>nav('today')} style={{borderRadius:16}} /></div>
+          <div style={{marginTop:14,textAlign:'center'}}><ML color={t.textTertiary}>Forgot password</ML></div>
+        </Card>
+        <div style={{textAlign:'center'}}>
+          <span style={{fontFamily:F.body,fontSize:13,color:t.textSecondary}}>New here? </span>
+          <span onClick={()=>nav('register')} style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:t.accentGold,cursor:'pointer'}}>Create account</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── REGISTER ─────────────────────────────────────────────────────────────
+function RegisterScreen({ t, nav }) {
+  const [step, setStep] = useState(0);
+  const steps = ['Account','Style','Location'];
+  const styleOptions = ['Minimal','Earthy','Tailored','Layered','Casual','Formal','Streetwear','Athleisure'];
+  const [selected, setSelected] = useState(['Minimal','Earthy','Layered']);
+  const toggleStyle = (s) => setSelected(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:280,background:`linear-gradient(180deg,${t.bgSurface},${t.bgDeep})`,opacity:0.7}} />
+      <div style={{flex:1,display:'flex',flexDirection:'column',padding:'56px 28px 32px',position:'relative',zIndex:1,overflowY:'auto'}}>
+        {/* Nav */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}}>
+          <div onClick={()=>step>0?setStep(s=>s-1):nav('login')} style={{cursor:'pointer'}}>
+            <Ic n="arrowL" s={20} c={t.textSecondary} />
+          </div>
+          <div style={{display:'flex',gap:6}}>
+            {steps.map((_,i)=><div key={i} style={{height:3,width:i===step?24:8,borderRadius:100,background:i<=step?t.accentGold:t.borderSubtle,transition:'all 0.3s'}} />)}
+          </div>
+          <ML color={t.textTertiary}>{`0${step+1}/${steps.length}`}</ML>
+        </div>
+        <ML color={t.accentGold} style={{display:'block',marginBottom:10}}>Step 0{step+1} — {steps[step]}</ML>
+        <div style={{fontFamily:F.display,fontSize:34,fontWeight:600,color:t.textPrimary,lineHeight:1.1,marginBottom:6}}>
+          {step===0&&<>Make this<br /><span style={{fontStyle:'italic',color:t.accentGold}}>your closet.</span></>}
+          {step===1&&<>Define your<br /><span style={{fontStyle:'italic',color:t.accentGold}}>aesthetic.</span></>}
+          {step===2&&<>Set your<br /><span style={{fontStyle:'italic',color:t.accentGold}}>world.</span></>}
+        </div>
+        <div style={{fontFamily:F.body,fontSize:13,color:t.textSecondary,marginBottom:24}}>
+          {step===0&&"A few details, then we'll curate every look."}
+          {step===1&&"Tell us how you dress. We'll learn the rest."}
+          {step===2&&"Your city shapes every recommendation."}
+        </div>
+        <Card t={t} style={{padding:'22px 20px'}}>
+          {step===0&&(
+            <div style={{display:'flex',flexDirection:'column',gap:18}}>
+              <Inp label="Email" type="email" placeholder="you@example.com" t={t} />
+              <Inp label="Full name" placeholder="Alex Kim" t={t} />
+              <Inp label="Password" type="password" placeholder="At least 8 characters" t={t} />
+              <Inp label="Confirm password" type="password" placeholder="••••••••" t={t} />
+            </div>
+          )}
+          {step===1&&(
+            <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              <ML color={t.textTertiary} style={{display:'block',marginBottom:4}}>Style keywords</ML>
+              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                {styleOptions.map(s=>{
+                  const on=selected.includes(s);
+                  return <div key={s} onClick={()=>toggleStyle(s)} style={{padding:'7px 14px',borderRadius:100,border:`1px solid ${on?t.accentMoss:t.borderSubtle}`,background:on?t.mossSoft:'transparent',cursor:'pointer'}}>
+                    <span style={{fontFamily:F.body,fontSize:13,color:on?t.accentOlive:t.textSecondary}}>{s}</span>
+                  </div>;
+                })}
+              </div>
+              <Divider color={t.borderSoft} style={{margin:'6px 0'}} />
+              <Inp label="Occasions (optional)" placeholder="Work, weekend, travel…" t={t} />
+            </div>
+          )}
+          {step===2&&(
+            <div style={{display:'flex',flexDirection:'column',gap:18}}>
+              <div style={{borderRadius:16,overflow:'hidden',height:110,background:`linear-gradient(135deg,${t.bgRaised},${t.glowMoss})`,display:'flex',alignItems:'center',justifyContent:'center',gap:12,border:`1px dashed ${t.borderSubtle}`,cursor:'pointer'}}>
+                <Ic n="location" s={22} c={t.accentMoss} />
+                <div>
+                  <div style={{fontFamily:F.body,fontSize:14,color:t.textPrimary,fontWeight:500}}>Use device location</div>
+                  <div style={{fontFamily:F.body,fontSize:11,color:t.textSecondary}}>For weather-aware suggestions</div>
+                </div>
+              </div>
+              <Inp label="Or enter your city" placeholder="New York, London, Tokyo…" t={t} />
+            </div>
+          )}
+        </Card>
+        <div style={{marginTop:18}}>
+          <Btn label={step<2?'Continue':'Create account'} t={t} full variant={step<2?'primary':'premium'} onClick={()=>step<2?setStep(s=>s+1):nav('today')} style={{borderRadius:16}} />
+        </div>
+        <div style={{textAlign:'center',marginTop:14}}>
+          <span style={{fontFamily:F.body,fontSize:13,color:t.textSecondary}}>Already have an account? </span>
+          <span onClick={()=>nav('login')} style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:t.accentGold,cursor:'pointer'}}>Sign in</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── LOCATION PERMISSION ───────────────────────────────────────────────────
+function LocationPermScreen({ t, nav }) {
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,position:'relative',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{position:'absolute',top:'22%',left:'50%',transform:'translate(-50%,-50%)',width:280,height:280,borderRadius:'50%',background:t.glowMoss,filter:'blur(60px)',pointerEvents:'none'}} />
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',padding:'60px 28px 36px',position:'relative',zIndex:1}}>
+        <ML color={t.textTertiary} style={{display:'block'}}>Step 02</ML>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center'}}>
+          <div style={{position:'relative',width:160,height:160,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:36}}>
+            <div style={{position:'absolute',inset:0,borderRadius:'50%',border:`1px solid ${t.borderSoft}`,background:t.glowMoss}} />
+            <div style={{position:'absolute',inset:24,borderRadius:'50%',border:`1px dashed ${t.mossSoft}`}} />
+            <div style={{width:60,height:60,borderRadius:'50%',background:t.accentMoss,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 0 32px ${t.mossSoft}`}}>
+              <Ic n="location" s={26} c="#F0EDE6" />
+            </div>
+          </div>
+          <div style={{fontFamily:F.display,fontSize:32,fontWeight:600,color:t.textPrimary,lineHeight:1.15,marginBottom:14}}>
+            The weather decides<br /><span style={{fontStyle:'italic',color:t.accentGold}}>before you do.</span>
+          </div>
+          <div style={{fontFamily:F.body,fontSize:13,color:t.textSecondary,maxWidth:260,lineHeight:1.6}}>
+            Share your location and we'll pair tomorrow's looks to tomorrow's sky.
+          </div>
+        </div>
+        <div>
+          <Btn icon={<Ic n="location" s={15} c="#1A1208" />} label="Allow location access" t={t} variant="premium" full onClick={()=>nav('today')} style={{borderRadius:16}} />
+          <div style={{textAlign:'center',marginTop:14}}><ML color={t.textTertiary}>Maybe later</ML></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SWIPEABLE CARD ────────────────────────────────────────────────────────
+function SwipeCard({ t, index }) {
+  const [offset, setOffset] = useState(0);
+  const [drag, setDrag] = useState(false);
+  const [decision, setDecision] = useState(null);
+  const startX = useRef(null);
+  const THRESH = 75;
+  const names = ['The Morning Walk','Studio Session','Golden Hour','Weekend Edit','Quiet Monday'];
+  const temps = ['14°C — Overcast','22°C — Sunny','9°C — Crisp','18°C — Partly cloudy'];
+  const occ = ['Casual','Smart Casual','Work','Weekend'];
+  const tones = [['top','bottom','accent'],['outer','bottom','shoes'],['top','outer','accent']];
+  const [ta, tb, tc] = tones[index%3];
+
+  const down = (clientX) => { startX.current=clientX; setDrag(true); setDecision(null); };
+  const move = (clientX) => {
+    if(!drag||startX.current===null) return;
+    const dx=clientX-startX.current;
+    setOffset(dx);
+    setDecision(dx>THRESH/2?'wear':dx<-THRESH/2?'skip':null);
+  };
+  const up = () => {
+    if(!drag) return;
+    setDrag(false);
+    setOffset(0);
+    startX.current=null;
+  };
+
+  return (
+    <div style={{position:'relative',userSelect:'none'}}>
+      <div style={{position:'absolute',inset:0,borderRadius:22,zIndex:0,background:decision==='wear'?`linear-gradient(90deg,${t.mossSoft},transparent 60%)`:decision==='skip'?`linear-gradient(270deg,rgba(201,96,74,0.18),transparent 60%)`:'transparent',transition:drag?'none':'background 0.3s',pointerEvents:'none',display:'flex',alignItems:'center',justifyContent:decision==='wear'?'flex-start':'flex-end',padding:'0 20px'}}>
+        {decision==='wear'&&<div style={{display:'flex',alignItems:'center',gap:6}}><Ic n="check" s={18} c={t.accentMoss}/><ML color={t.accentMoss}>Wear this</ML></div>}
+        {decision==='skip'&&<div style={{display:'flex',alignItems:'center',gap:6}}><ML color={t.accentClay}>Skip</ML><Ic n="x" s={18} c={t.accentClay}/></div>}
+      </div>
+      <Card t={t} style={{padding:'16px',transform:`translateX(${offset}px) rotate(${offset*0.025}deg)`,transition:drag?'none':'transform 0.35s cubic-bezier(.34,1.56,.64,1)',cursor:drag?'grabbing':'grab',position:'relative',zIndex:1}}
+        onMouseDown={e=>down(e.clientX)} onMouseMove={e=>move(e.clientX)} onMouseUp={up} onMouseLeave={up}
+        onTouchStart={e=>down(e.touches[0].clientX)} onTouchMove={e=>move(e.touches[0].clientX)} onTouchEnd={up}
+      >
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14}}>
+          <div>
+            <ML color={t.accentGold}>Look {String(index+1).padStart(2,'0')}</ML>
+            <div style={{fontFamily:F.display,fontSize:22,fontStyle:'italic',fontWeight:600,color:t.textPrimary,marginTop:2,lineHeight:1.1}}>{names[index%names.length]}</div>
+          </div>
+          <Pill variant="muted" t={t}>{78+index*5}% match</Pill>
+        </div>
+        <div style={{display:'flex',gap:8,height:196}}>
+          <GarmentTile tone={ta} label="Top" style={{flex:1.6,height:'100%'}} />
+          <div style={{flex:1,display:'flex',flexDirection:'column',gap:8}}>
+            <GarmentTile tone={tb} label="Bottom" style={{flex:1.6,minHeight:0}} />
+            <GarmentTile tone={tc} label="Accent" style={{flex:1,minHeight:0}} />
+          </div>
+        </div>
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:12,marginBottom:12}}>
+          <ML color={t.textTertiary}>{temps[index%temps.length]}</ML>
+          <ML color={t.accentOlive}>— {occ[index%occ.length]}</ML>
+        </div>
+        <Divider color={t.borderSoft} />
+        <div style={{paddingTop:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:4}}><Ic n="arrowL" s={14} c={t.textTertiary}/><ML color={t.textTertiary}>Skip</ML></div>
+            <div style={{width:1,height:12,background:t.borderSubtle}} />
+            <div style={{display:'flex',alignItems:'center',gap:4}}><ML color={t.accentMoss}>Wear</ML><Ic n="arrowR" s={14} c={t.accentMoss}/></div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <div style={{width:34,height:34,borderRadius:'50%',border:`1px solid ${t.borderSoft}`,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',background:t.bgRaised}}><Ic n="heart" s={15} c={t.accentGold}/></div>
+            <div style={{width:34,height:34,borderRadius:'50%',border:`1px solid ${t.borderSubtle}`,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',background:t.bgRaised}}><Ic n="x" s={15} c={t.textSecondary}/></div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────
+function DashboardScreen({ t }) {
+  const date = new Intl.DateTimeFormat('en',{weekday:'long',month:'2-digit',day:'2-digit'}).format(new Date());
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'58px 22px 110px'}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:20}}>
+          <div>
+            <ML color={t.textTertiary} style={{display:'block',marginBottom:6}}>{date}</ML>
+            <div style={{fontFamily:F.display,fontSize:32,fontWeight:600,color:t.textPrimary,lineHeight:1.1}}>Good morning,<br /><span style={{fontStyle:'italic',color:t.accentGold}}>Alex.</span></div>
+          </div>
+          <IconBtn t={t}><Ic n="menu" s={16} c={t.textSecondary}/></IconBtn>
+        </div>
+        {/* Weather strip */}
+        <div style={{background:t.cardBg,border:`1px solid ${t.borderSoft}`,borderRadius:18,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,marginBottom:22}}>
+          <div style={{width:42,height:42,borderRadius:'50%',background:t.glowGold,border:`1px solid ${t.goldSoft}`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <Ic n="sun" s={20} c={t.accentGold}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:F.body,fontSize:14,fontWeight:500,color:t.textPrimary}}>New York City</div>
+            <div style={{fontFamily:F.body,fontSize:12,color:t.textSecondary}}>Partly cloudy — feels crisp</div>
+          </div>
+          <div style={{fontFamily:F.display,fontSize:26,fontWeight:600,color:t.accentOlive}}>18°</div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <div style={{fontFamily:F.display,fontSize:22,fontStyle:'italic',fontWeight:600,color:t.textPrimary}}>Today's looks</div>
+          <ML color={t.textTertiary}>3 looks</ML>
+        </div>
+        <div style={{display:'flex',gap:8,marginBottom:18}}>
+          <Btn icon={<Ic n="refresh" s={14} c={t.textPrimary}/>} label="Refresh" t={t} variant="secondary" style={{fontSize:12,padding:'8px 14px',borderRadius:12,flex:1}} />
+          <Btn icon={<Ic n="location" s={14} c={t.accentGold}/>} label="Update location" t={t} variant="ghost" style={{fontSize:12,padding:'8px 14px',borderRadius:12,flex:1}} />
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          {[0,1,2].map(i=><SwipeCard key={i} t={t} index={i} />)}
+        </div>
+        <Card t={t} style={{padding:'14px 16px',marginTop:14}}>
+          <ML color={t.accentGold} style={{display:'block',marginBottom:6}}>Motion note</ML>
+          <div style={{fontFamily:F.body,fontSize:12,color:t.textSecondary,lineHeight:1.6}}>Drag cards left to skip, right to wear. Pull down to refresh with latest weather.</div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── WARDROBE ──────────────────────────────────────────────────────────────
+function WardrobeScreen({ t }) {
+  const [activeFilter, setActiveFilter] = useState('All');
+  const cats = ['All','Tops','Bottoms','Outer','Accents','Shoes'];
+  const tones = ['top','bottom','outer','accent','top','shoes','bottom','outer','accent','top'];
+  const labels = ['Merino Crewneck','Linen Trousers','Wool Overcoat','Canvas Tote','Oxford Shirt','Chino Shorts','Field Jacket','Silk Scarf','Derby Shoes','Cashmere Vest'];
+  const clrs = ['Ecru','Stone','Camel','Forest','White','Khaki','Olive','Rust','Tan','Cream'];
+  const heights = [200,240,170,215,190,230,200,180,220,250];
+  const col1=[0,2,4,6,8], col2=[1,3,5,7,9];
+
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'58px 22px 110px'}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:4}}>
+          <div>
+            <ML color={t.textTertiary} style={{display:'block',marginBottom:6}}>Closet</ML>
+            <div style={{fontFamily:F.display,fontSize:32,fontWeight:600,color:t.textPrimary}}>Wardrobe</div>
+          </div>
+          <IconBtn t={t}><Ic n="search" s={16} c={t.textSecondary}/></IconBtn>
+        </div>
+        <div style={{display:'flex',gap:4,alignItems:'center',marginBottom:16}}>
+          <span style={{fontFamily:F.body,fontSize:13,color:t.accentGold,fontWeight:500}}>10 pieces</span>
+          <span style={{fontFamily:F.body,fontSize:13,color:t.textSecondary}}> — last added 2d ago</span>
+        </div>
+        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4,marginBottom:18,marginLeft:-22,paddingLeft:22,marginRight:-22,paddingRight:22}}>
+          {cats.map(c=>{
+            const on=activeFilter===c;
+            return <div key={c} onClick={()=>setActiveFilter(c)} style={{padding:'7px 16px',borderRadius:100,cursor:'pointer',whiteSpace:'nowrap',background:on?t.textPrimary:'transparent',border:`1px solid ${on?t.textPrimary:t.borderSubtle}`,flexShrink:0}}>
+              <ML size={8} style={{color:on?t.bgDeep:t.textSecondary}}>{c}</ML>
+            </div>;
+          })}
+        </div>
+        <div style={{display:'flex',gap:10,marginBottom:20}}>
+          <Card t={t} dashed style={{flex:1,padding:'16px 14px',cursor:'pointer',background:t.glowMoss}}>
+            <div style={{width:32,height:32,borderRadius:'50%',background:t.accentMoss,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:10}}><Ic n="camera" s={15} c="#F0EDE6"/></div>
+            <div style={{fontFamily:F.display,fontSize:16,fontWeight:600,color:t.textPrimary}}>Camera</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:t.textSecondary,marginTop:2}}>Capture a piece</div>
+          </Card>
+          <Card t={t} dashed style={{flex:1,padding:'16px 14px',cursor:'pointer'}}>
+            <div style={{width:32,height:32,borderRadius:'50%',background:t.bgRaised,border:`1px solid ${t.borderSoft}`,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:10}}><Ic n="images" s={15} c={t.accentGold}/></div>
+            <div style={{fontFamily:F.display,fontSize:16,fontWeight:600,color:t.textPrimary}}>Library</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:t.textSecondary,marginTop:2}}>From photos</div>
+          </Card>
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          {[col1,col2].map((col,ci)=>(
+            <div key={ci} style={{flex:1,display:'flex',flexDirection:'column',gap:10}}>
+              {col.map(idx=>(
+                <div key={idx}>
+                  <GarmentTile tone={tones[idx]} label={labels[idx]} style={{height:heights[idx],borderRadius:18}} />
+                  <div style={{padding:'8px 2px 0'}}>
+                    <div style={{fontFamily:F.display,fontSize:14,fontStyle:'italic',fontWeight:600,color:t.textPrimary}}>{labels[idx]}</div>
+                    <ML color={t.textTertiary}>{clrs[idx]}</ML>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HISTORY ───────────────────────────────────────────────────────────────
+function HistoryScreen({ t }) {
+  const days = [
+    {date:'Thursday, 05/01',key:'2026-05-01',outfits:[{name:'The Morning Walk',status:'Worn',variant:'moss'},{name:'Studio Session',status:'Loved',variant:'gold'}]},
+    {date:'Wednesday, 04/30',key:'2026-04-30',outfits:[{name:'Golden Hour',status:'Worn',variant:'moss'}]},
+    {date:'Tuesday, 04/29',key:'2026-04-29',outfits:[{name:'Weekend Edit',status:'Skipped',variant:'clay'},{name:'Quiet Monday',status:'Loved',variant:'gold'}]},
+  ];
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'58px 22px 110px'}}>
+        <div style={{marginBottom:22}}>
+          <ML color={t.textTertiary} style={{display:'block',marginBottom:6}}>Diary</ML>
+          <div style={{fontFamily:F.display,fontSize:32,fontWeight:600,color:t.textPrimary}}>History</div>
+          <div style={{fontFamily:F.body,fontSize:13,color:t.textSecondary,marginTop:4}}>5 looks tracked</div>
+        </div>
+        {days.map(day=>(
+          <div key={day.key} style={{marginBottom:28}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+              <div style={{fontFamily:F.display,fontSize:17,fontStyle:'italic',fontWeight:600,color:t.textPrimary,whiteSpace:'nowrap'}}>{day.date}</div>
+              <Divider color={t.borderSoft} />
+              <ML color={t.textTertiary} style={{whiteSpace:'nowrap'}}>{day.key}</ML>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {day.outfits.map((o,i)=>(
+                <Card key={i} t={t} style={{padding:'12px 14px'}}>
+                  <div style={{display:'flex',gap:12,alignItems:'center'}}>
+                    <div style={{display:'flex',gap:4}}>
+                      {['top','bottom','accent'].map(tone=><GarmentTile key={tone} tone={tone} style={{width:38,height:52,borderRadius:10}} />)}
+                    </div>
+                    <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between',gap:6}}>
+                      <div>
+                        <div style={{fontFamily:F.display,fontSize:15,fontStyle:'italic',fontWeight:600,color:t.textPrimary,lineHeight:1.2}}>{o.name}</div>
+                        <ML color={t.textTertiary} style={{marginTop:2,display:'block'}}>3 pieces</ML>
+                      </div>
+                      <Pill variant={o.variant} t={t}>{o.status}</Pill>
+                    </div>
+                    <Ic n="chev" s={16} c={t.textTertiary}/>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── PROFILE ───────────────────────────────────────────────────────────────
+function ProfileScreen({ t, nav }) {
+  const [remind, setRemind] = useState(true);
+  const stats = [{l:'Pieces',v:'10'},{l:'Worn',v:'14'},{l:'Streak',v:'3d',gold:true}];
+  const prefs = [
+    {icon:'location',l:'New York City',s:'40.7128 — 74.0060'},
+    {icon:'bell',l:'Daily reminder',s:'8:00 AM — weekdays',toggle:true},
+    {icon:'shirt',l:'Style preferences',s:'Minimal · Earthy · Layered',act:'Edit'},
+    {icon:'eye',l:'Appearance',s:'Dark mode enabled',act:'Edit'},
+  ];
+  return (
+    <div style={{width:'100%',height:'100%',background:t.bgDeep,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <div style={{flex:1,overflowY:'auto',padding:'58px 22px 110px'}}>
+        <div style={{marginBottom:22}}>
+          <ML color={t.textTertiary} style={{display:'block',marginBottom:6}}>You</ML>
+          <div style={{fontFamily:F.display,fontSize:32,fontWeight:600,color:t.textPrimary}}>Profile</div>
+        </div>
+        <Card t={t} accent="gold" style={{padding:'20px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:18}}>
+            <div style={{width:56,height:56,borderRadius:'50%',background:t.accentGold,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <span style={{fontFamily:F.display,fontSize:22,fontStyle:'italic',fontWeight:600,color:'#1A1208'}}>AK</span>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:F.display,fontSize:20,fontWeight:600,color:t.textPrimary}}>Alex Kim</div>
+              <div style={{fontFamily:F.body,fontSize:12,color:t.textSecondary,marginTop:2}}>alex@example.com</div>
+            </div>
+            <IconBtn t={t} size={32}><Ic n="chev" s={14} c={t.textTertiary}/></IconBtn>
+          </div>
+          <Divider color={t.borderSoft} />
+          <div style={{display:'flex',gap:28,paddingTop:16}}>
+            {stats.map(s=>(
+              <div key={s.l}>
+                <ML color={t.textTertiary} style={{display:'block',marginBottom:4}}>{s.l}</ML>
+                <div style={{fontFamily:F.display,fontSize:22,fontWeight:600,fontStyle:s.gold?'italic':'normal',color:s.gold?t.accentGold:t.textPrimary}}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <div style={{marginTop:28}}>
+          <ML color={t.textTertiary} style={{display:'block',marginBottom:12}}>Preferences</ML>
+          <Card t={t} style={{padding:0,overflow:'hidden'}}>
+            {prefs.map((p,i)=>(
+              <div key={p.l}>
+                {i>0&&<Divider color={t.borderSoft} />}
+                <div style={{padding:'14px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
+                  <div style={{width:32,height:32,borderRadius:'50%',background:t.bgRaised,border:`1px solid ${t.borderSoft}`,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <Ic n={p.icon} s={15} c={t.textSecondary}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:F.body,fontSize:13,fontWeight:500,color:t.textPrimary}}>{p.l}</div>
+                    <ML color={t.textTertiary} style={{display:'block',marginTop:2}}>{p.s}</ML>
+                  </div>
+                  {p.toggle&&<Toggle on={remind} t={t} />}
+                  {p.act&&<ML color={t.accentGold} style={{cursor:'pointer'}}>{p.act}</ML>}
+                  {!p.toggle&&!p.act&&<Ic n="chev" s={14} c={t.textTertiary}/>}
+                </div>
+              </div>
+            ))}
+          </Card>
+        </div>
+        <div style={{marginTop:28,textAlign:'center'}}>
+          <div onClick={()=>nav('login')} style={{display:'inline-flex',alignItems:'center',gap:7,cursor:'pointer'}}>
+            <Ic n="logout" s={14} c={t.accentClay}/>
+            <ML color={t.accentClay}>Sign out</ML>
+          </div>
+        </div>
+        <div style={{marginTop:10,textAlign:'center'}}>
+          <ML color={t.textTertiary} style={{opacity:0.5}}>v 1.4.2 — ATTREQ</ML>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── APP ROUTER ────────────────────────────────────────────────────────────
+function App({ theme, initScreen, customTheme, noirGreen }) {
+  const baseTheme = THEMES[theme] || THEMES.noir;
+  let t = customTheme || baseTheme;
+  // If a noirGreen key is passed and this is a noir theme, apply the green variant
+  if (!customTheme && theme === 'noir' && noirGreen && NOIR_GREENS[noirGreen]) {
+    const g = NOIR_GREENS[noirGreen];
+    t = { ...baseTheme, accentMoss:g.accentMoss, accentOlive:g.accentOlive, borderSubtle:g.borderSubtle, bgSurface:g.bgSurface, bgRaised:g.bgRaised, mossSoft:g.mossSoft, glowMoss:g.glowMoss, navBg:`rgba(${hexToRgb(g.bgRaised)},0.95)`, cardBg:`rgba(${hexToRgb(g.bgRaised)},0.82)` };
+  }
+  const [screen, setScreen] = useState(initScreen||'today');
+  const prev = useRef(initScreen);
+  useEffect(()=>{
+    if(initScreen!==prev.current){ setScreen(initScreen); prev.current=initScreen; }
+  },[initScreen]);
+
+  const SCREENS = { login:<LoginScreen t={t} nav={setScreen}/>, register:<RegisterScreen t={t} nav={setScreen}/>, location:<LocationPermScreen t={t} nav={setScreen}/>, today:<DashboardScreen t={t}/>, wardrobe:<WardrobeScreen t={t}/>, history:<HistoryScreen t={t}/>, profile:<ProfileScreen t={t} nav={setScreen}/> };
+  const showTab = ['today','wardrobe','history','profile'].includes(screen);
+  return (
+    <div style={{width:'100%',height:'100%',position:'relative',overflow:'hidden',background:t.bgDeep}}>
+      {SCREENS[screen]||SCREENS.today}
+      {showTab&&<TabBar active={screen} onTab={setScreen} t={t}/>}
+    </div>
+  );
+}
+
+// ── DESIGN CANVAS ─────────────────────────────────────────────────────────
+function DesignCanvas({ children }) {
+  const ref = useRef(null);
+  const [pan, setPan] = useState({x:80,y:60});
+  const [zoom, setZoom] = useState(0.52);
+  const dragging = useRef(false);
+  const lastPos = useRef({x:0,y:0});
+
+  const onWheel = useCallback(e=>{
+    e.preventDefault();
+    if(e.ctrlKey||e.metaKey){
+      const factor = e.deltaY>0?0.92:1.08;
+      setZoom(z=>Math.max(0.2,Math.min(2,z*factor)));
+    } else {
+      setPan(p=>({x:p.x-e.deltaX,y:p.y-e.deltaY}));
+    }
+  },[]);
+
+  useEffect(()=>{
+    const el=ref.current;
+    if(!el) return;
+    el.addEventListener('wheel',onWheel,{passive:false});
+    return ()=>el.removeEventListener('wheel',onWheel);
+  },[onWheel]);
+
+  const onMouseDown = e=>{ if(e.button!==1&&!e.altKey) return; dragging.current=true; lastPos.current={x:e.clientX,y:e.clientY}; e.preventDefault(); };
+  const onMouseMove = e=>{ if(!dragging.current) return; setPan(p=>({x:p.x+(e.clientX-lastPos.current.x),y:p.y+(e.clientY-lastPos.current.y)})); lastPos.current={x:e.clientX,y:e.clientY}; };
+  const onMouseUp = ()=>{ dragging.current=false; };
+
+  return (
+    <div ref={ref} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} style={{width:'100%',height:'100%',overflow:'hidden',background:'#111',position:'relative',cursor:'default'}}>
+      {/* Grid */}
+      <svg style={{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'}} xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" x={pan.x%((40)*zoom)} y={pan.y%((40)*zoom)} width={40*zoom} height={40*zoom} patternUnits="userSpaceOnUse">
+            <circle cx={0} cy={0} r={0.8} fill="rgba(255,255,255,0.08)" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+      </svg>
+      {/* Zoom hint */}
+      <div style={{position:'absolute',top:14,right:14,display:'flex',gap:8,alignItems:'center',zIndex:100}}>
+        <div onClick={()=>setZoom(z=>Math.min(2,z*1.15))} style={{width:28,height:28,borderRadius:7,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'rgba(255,255,255,0.7)',fontSize:16,fontFamily:F.body}}>+</div>
+        <div style={{fontFamily:F.mono,fontSize:9,color:'rgba(255,255,255,0.4)',letterSpacing:'0.1em'}}>{Math.round(zoom*100)}%</div>
+        <div onClick={()=>setZoom(z=>Math.max(0.2,z*0.87))} style={{width:28,height:28,borderRadius:7,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'rgba(255,255,255,0.7)',fontSize:16,fontFamily:F.body}}>−</div>
+        <div onClick={()=>{setZoom(0.52);setPan({x:80,y:60});}} style={{width:28,height:28,borderRadius:7,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'rgba(255,255,255,0.4)',fontSize:10,fontFamily:F.mono,letterSpacing:'0.05em'}}>FIT</div>
+      </div>
+      {/* Canvas */}
+      <div style={{position:'absolute',top:0,left:0,transformOrigin:'0 0',transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{marginBottom:64}}>
+      <div style={{fontFamily:F.mono,fontSize:10,letterSpacing:'0.18em',textTransform:'uppercase',color:'rgba(255,255,255,0.28)',marginBottom:24,paddingLeft:4}}>{title}</div>
+      <div style={{display:'flex',gap:40,flexWrap:'wrap',alignItems:'flex-start'}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Artboard({ label, theme, initScreen, dark, noirGreen }) {
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:14,alignItems:'center'}}>
+      <IosFrame dark={dark}>
+        <App theme={theme} initScreen={initScreen} noirGreen={noirGreen} />
+      </IosFrame>
+      <div style={{fontFamily:F.mono,fontSize:9,letterSpacing:'0.14em',textTransform:'uppercase',color:'rgba(255,255,255,0.35)'}}>{label}</div>
+    </div>
+  );
+}
+
+// ── TWEAKS PANEL ──────────────────────────────────────────────────────────
+function TweaksPanel({ tweaks, setTweak }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(()=>{
+    const handler = e=>{
+      if(e?.data?.type==='__activate_edit_mode') setOpen(true);
+      else if(e?.data?.type==='__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message',handler);
+    window.parent.postMessage({type:'__edit_mode_available'},'*');
+    return ()=>window.removeEventListener('message',handler);
+  },[]);
+
+  if(!open) return null;
+
+  const close = () => {
+    setOpen(false);
+    window.parent.postMessage({type:'__edit_mode_dismissed'},'*');
+  };
+
+  return (
+    <div style={{position:'fixed',bottom:24,right:24,width:240,background:'#1a1a1a',border:'1px solid rgba(255,255,255,0.12)',borderRadius:16,padding:'18px',zIndex:9999,boxShadow:'0 20px 60px rgba(0,0,0,0.6)',fontFamily:F.body}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+        <span style={{fontFamily:F.mono,fontSize:10,letterSpacing:'0.14em',textTransform:'uppercase',color:'rgba(255,255,255,0.6)'}}>Tweaks</span>
+        <div onClick={close} style={{cursor:'pointer',color:'rgba(255,255,255,0.4)',fontSize:18,lineHeight:1,padding:'2px 6px'}}>×</div>
+      </div>
+      <div style={{fontFamily:F.mono,fontSize:9,letterSpacing:'0.12em',textTransform:'uppercase',color:'rgba(255,255,255,0.3)',marginBottom:10}}>Auth screens</div>
+      {[{id:'showRegister',l:'Register flow'},{id:'showLocation',l:'Location onboarding'}].map(item=>(
+        <div key={item.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0'}}>
+          <span style={{fontSize:13,color:'rgba(255,255,255,0.65)'}}>{item.l}</span>
+          <div onClick={()=>setTweak(item.id,!tweaks[item.id])} style={{width:36,height:20,borderRadius:100,background:tweaks[item.id]?NOIR_GREENS.sage.accentMoss:'rgba(255,255,255,0.15)',position:'relative',cursor:'pointer',transition:'background 0.2s'}}>
+            <div style={{position:'absolute',top:2,left:tweaks[item.id]?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left 0.2s'}} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── hex → "r,g,b" ─────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `${r},${g},${b}`;
+}
+
+// ── Green swatch preview (standalone, no theme needed) ────────────────────
+function GreenSwatch({ gkey, selected, onClick }) {
+  const g = NOIR_GREENS[gkey];
+  const on = selected === gkey;
+  return (
+    <div onClick={()=>onClick(gkey)} style={{ cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+      <div style={{ width:52, height:52, borderRadius:14, background:`linear-gradient(135deg, ${g.bgRaised}, ${g.bgSurface})`, border:`2px solid ${on ? g.accentMoss : 'rgba(255,255,255,0.1)'}`, display:'flex', alignItems:'center', justifyContent:'center', position:'relative', boxShadow: on ? `0 0 0 3px ${g.accentMoss}44` : 'none', transition:'all 0.2s' }}>
+        <div style={{ width:28, height:28, borderRadius:8, background:g.accentMoss }} />
+        <div style={{ position:'absolute', bottom:5, right:5, width:10, height:10, borderRadius:3, background:g.accentOlive, opacity:0.8 }} />
+      </div>
+      <span style={{ fontFamily:F.mono, fontSize:8, letterSpacing:'0.12em', textTransform:'uppercase', color: on ? g.accentMoss : 'rgba(255,255,255,0.35)' }}>{g.name}</span>
+    </div>
+  );
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────────────
+function Root() {
+  const [tweaks, setTweaksState] = useState(TWEAK_DEFAULTS);
+  const setTweak = (key, val) => {
+    setTweaksState(p=>({...p,[key]:val}));
+    window.parent.postMessage({type:'__edit_mode_set_keys',edits:{[key]:val}},'*');
+  };
+
+  return (
+    <>
+      <DesignCanvas>
+
+        {/* ── Auth ── */}
+        <Section title="Auth">
+          <Artboard label="Login — Noir" theme="noir" initScreen="login" dark={true} noirGreen="sage" />
+          <Artboard label="Register — Noir" theme="noir" initScreen="register" dark={true} noirGreen="sage" />
+          <Artboard label="Location Onboarding — Noir" theme="noir" initScreen="location" dark={true} noirGreen="sage" />
+          <Artboard label="Login — Cream" theme="cream" initScreen="login" dark={false} />
+          <Artboard label="Register — Cream" theme="cream" initScreen="register" dark={false} />
+        </Section>
+
+        {/* ── Dashboard ── */}
+        <Section title="Dashboard">
+          <Artboard label="Today — Noir" theme="noir" initScreen="today" dark={true} noirGreen="sage" />
+          <Artboard label="Today — Cream" theme="cream" initScreen="today" dark={false} />
+        </Section>
+
+        {/* ── Wardrobe ── */}
+        <Section title="Wardrobe">
+          <Artboard label="Wardrobe — Noir" theme="noir" initScreen="wardrobe" dark={true} noirGreen="sage" />
+          <Artboard label="Wardrobe — Cream" theme="cream" initScreen="wardrobe" dark={false} />
+        </Section>
+
+        {/* ── History ── */}
+        <Section title="History">
+          <Artboard label="History — Noir" theme="noir" initScreen="history" dark={true} noirGreen="sage" />
+          <Artboard label="History — Cream" theme="cream" initScreen="history" dark={false} />
+        </Section>
+
+        {/* ── Profile ── */}
+        <Section title="Profile">
+          <Artboard label="Profile — Noir" theme="noir" initScreen="profile" dark={true} noirGreen="sage" />
+          <Artboard label="Profile — Cream" theme="cream" initScreen="profile" dark={false} />
+        </Section>
+
+      </DesignCanvas>
+
+      <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+  <rect width="120" height="80" fill="#0D1210"/>
+  <rect x="40" y="12" width="40" height="56" rx="8" fill="#1C2923" stroke="#3D7255" strokeWidth="1"/>
+  <rect x="48" y="22" width="24" height="3" rx="1.5" fill="#D4A854" opacity="0.8"/>
+  <rect x="44" y="30" width="32" height="8" rx="4" fill="#3D7255" opacity="0.5"/>
+  <rect x="44" y="42" width="32" height="8" rx="4" fill="#3D7255" opacity="0.3"/>
+  <rect x="44" y="54" width="20" height="4" rx="2" fill="#D4A854" opacity="0.4"/>
+</svg>
+</template>
+</body>
+</html>
