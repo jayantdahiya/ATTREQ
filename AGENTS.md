@@ -231,6 +231,21 @@ GitHub Actions, path-scoped:
 
 Before pushing backend changes run `make lint && make test`; for mobile run `npm run typecheck && npm test` from `apps/mobile/`; for iOS run the `xcodebuild ... test` command above from `apps/ios/`. New Alembic migrations must chain from the current head or CI fails.
 
+## Milestone Completion — Push to GitHub
+
+**Every time a milestone is completed, changes must be pushed to GitHub.** This is not optional and must not be silently skipped.
+
+- After finishing a milestone (e.g. an `M0`–`M5` roadmap milestone, or any unit of work the user framed as a milestone), **remind the user that the changes need to be pushed** — do this every time, even if it was mentioned before.
+- If you are confident how to push (correct branch, clean state, `make lint && make test` / typecheck / `xcodebuild ... test` per the CI section passing for the touched app), and pushing is clearly appropriate, ask the user for confirmation before pushing since it is an outward-facing action.
+- **If you are unsure whether to push, which branch to push to, or how to push it, stop and ask the user** rather than guessing. Do not force-push or push to `main` without explicit instruction.
+- Never treat a milestone as done until the push has been carried out (or the user has explicitly deferred it).
+
+A tracked `post-commit` git hook (`.githooks/post-commit`) prints a push reminder whenever a commit message mentions a milestone (`M<n>` or "milestone"). It is a nudge only — it never pushes for you. Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Library Docs & Implementation Verification
 
 Use `ctx7` CLI to fetch current docs when implementing against or verifying any library, SDK, API, or framework — even well-known ones. Training data may be stale.
