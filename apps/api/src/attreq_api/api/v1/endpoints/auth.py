@@ -9,12 +9,17 @@ from attreq_api.config.security import create_tokens, verify_token
 from attreq_api.crud.user import user_crud
 from attreq_api.schemas.token import LoginResponse, TokenRefresh, TokenRefreshResponse
 from attreq_api.schemas.user import UserCreate, UserResponse
+from attreq_api.services.rate_limit import enforce_client_rate_limit
 
 router = APIRouter()
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register(
+    user_in: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(enforce_client_rate_limit),
+):
     """
     Register a new user.
 
@@ -37,7 +42,9 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(enforce_client_rate_limit),
 ):
     """
     Authenticate user and return tokens.

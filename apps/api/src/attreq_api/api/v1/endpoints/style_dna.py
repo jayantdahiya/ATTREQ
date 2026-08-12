@@ -22,6 +22,7 @@ from attreq_api.schemas.style_dna import (
     StyleDnaUploadResponse,
 )
 from attreq_api.services.ai.classifier_factory import get_classifier
+from attreq_api.services.rate_limit import enforce_user_rate_limit
 from attreq_api.services.storage.base import get_file_extension
 from attreq_api.services.style_dna.personal_color import estimate_personal_color
 from attreq_api.services.style_dna.style_dna_service import process_style_photos
@@ -52,6 +53,13 @@ async def upload_style_photos(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File '{f.filename}' is not an image",
             )
+
+    await enforce_user_rate_limit(
+        bucket="style-dna-builds",
+        user_id=current_user.id,
+        limit=settings.rate_limit_style_dna_builds,
+        window_seconds=settings.rate_limit_style_dna_window_seconds,
+    )
 
     result = await process_style_photos(db=db, user=current_user, photo_files=files)
     return result
@@ -129,6 +137,12 @@ async def regenerate_style_dna(
     current_user: User = Depends(get_current_active_user),
 ):
     """Re-trigger synthesis from existing stored photos (no new uploads needed)."""
+    await enforce_user_rate_limit(
+        bucket="style-dna-builds",
+        user_id=current_user.id,
+        limit=settings.rate_limit_style_dna_builds,
+        window_seconds=settings.rate_limit_style_dna_window_seconds,
+    )
     photos = await style_dna_crud.get_photos_by_user(db, current_user.id)
     usable = [p for p in photos if p.quality_ok and p.per_photo_extraction]
 

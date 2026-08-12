@@ -21,6 +21,14 @@ function appendFiles(formData: FormData, assets: UploadAsset[], fallback: string
   });
 }
 
+// Style DNA build (upload + regenerate) runs a per-photo vision LLM pass plus a
+// synthesis pass server-side; it routinely takes 30s+ on the happy path and
+// longer when the provider rate-limits and the backend retries with backoff.
+// The default 30s client timeout would abort a request the backend goes on to
+// complete — leaving a misleading "Network error" while Style DNA was actually
+// built. Give these two calls plenty of headroom.
+const STYLE_DNA_BUILD_TIMEOUT_MS = 180_000;
+
 export const styleDnaApi = {
   /** POST /users/style-dna/upload — multipart `files`, 3–8 outfit photos. 201. */
   async uploadStylePhotos(assets: UploadAsset[]) {
@@ -28,6 +36,7 @@ export const styleDnaApi = {
     appendFiles(formData, assets, 'photo');
     const response = await apiClient.post<StyleDnaUploadResponse>('/users/style-dna/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: STYLE_DNA_BUILD_TIMEOUT_MS,
     });
     return response.data;
   },
@@ -51,7 +60,9 @@ export const styleDnaApi = {
 
   /** POST /users/style-dna/regenerate — re-synthesize from stored photos (no new uploads). */
   async regenerate() {
-    const response = await apiClient.post<StyleDnaUploadResponse>('/users/style-dna/regenerate');
+    const response = await apiClient.post<StyleDnaUploadResponse>('/users/style-dna/regenerate', undefined, {
+      timeout: STYLE_DNA_BUILD_TIMEOUT_MS,
+    });
     return response.data;
   },
 

@@ -20,6 +20,10 @@ os.environ.setdefault("POSTGRES_USER", "attreq_user")
 os.environ.setdefault("POSTGRES_PASSWORD", "attreq_password")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-long-enough-for-jwt")
 os.environ["UPLOAD_DIR"] = "/tmp/attreq-test-uploads"
+# Rate limiting is an infrastructure concern and is exercised with deterministic
+# fake Redis clients in test_rate_limit.py. Keep unrelated endpoint tests from
+# depending on (or consuming shared counters in) a developer's local Redis.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 from attreq_api.main import app
 from attreq_api.models.outfit import Outfit

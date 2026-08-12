@@ -35,6 +35,7 @@ from attreq_api.schemas.wardrobe import (
 )
 from attreq_api.services.ai.embeddings import weaviate_service
 from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
+from attreq_api.services.rate_limit import enforce_user_rate_limit
 from attreq_api.services.stats.wardrobe_stats import invalidate_wardrobe_stats_cache
 from attreq_api.services.storage import get_storage
 from attreq_api.workers.batch_image_processor import process_batch_wardrobe_images
@@ -110,6 +111,12 @@ async def upload_wardrobe_item(
         HTTPException: If file validation fails
     """
     _validate_image_upload(file)
+    await enforce_user_rate_limit(
+        bucket="wardrobe-images",
+        user_id=current_user.id,
+        limit=settings.rate_limit_wardrobe_images,
+        window_seconds=settings.rate_limit_wardrobe_window_seconds,
+    )
 
     try:
         # Save uploaded file
@@ -205,6 +212,14 @@ async def batch_upload_wardrobe_items(
     for i, file in enumerate(files):
         _validate_image_upload(file, label=f"File {i + 1}")
         validated_files.append(file)
+
+    await enforce_user_rate_limit(
+        bucket="wardrobe-images",
+        user_id=current_user.id,
+        limit=settings.rate_limit_wardrobe_images,
+        window_seconds=settings.rate_limit_wardrobe_window_seconds,
+        cost=len(validated_files),
+    )
 
     try:
         # Save all uploaded files and create database records
@@ -707,6 +722,12 @@ async def add_wardrobe_item_photo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wardrobe item not found")
 
     _validate_image_upload(file)
+    await enforce_user_rate_limit(
+        bucket="wardrobe-images",
+        user_id=current_user.id,
+        limit=settings.rate_limit_wardrobe_images,
+        window_seconds=settings.rate_limit_wardrobe_window_seconds,
+    )
 
     try:
         file_ref, file_url = await get_storage().save_upload_file(

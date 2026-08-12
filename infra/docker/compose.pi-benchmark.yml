@@ -1,0 +1,70 @@
+# BR-04 only: loopback-bound, disposable component benchmarks for Raspberry Pi.
+# This is not the production stack. Run one profile at a time as documented in
+# docs/08-beta-readiness/02-br04-pi-benchmark-runbook.md.
+
+name: attreq-br04
+
+services:
+  api-runner:
+    profiles: ["api"]
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    image: attreq-api:br04-arm64
+    container_name: attreq_br04_api
+    restart: "no"
+    env_file:
+      # /dev/null is sufficient for FashionCLIP. Point this at the mode-0600
+      # beta env file only for the real reranker test; never store it in Git.
+      - ${ATTREQ_BENCHMARK_ENV_FILE:-/dev/null}
+    environment:
+      HF_HOME: /root/.cache/huggingface
+    command: ["sleep", "infinity"]
+    volumes:
+      - ${ATTREQ_BENCHMARK_DATA_DIR:-/mnt/storage/attreq/benchmarks}/huggingface:/root/.cache/huggingface
+      - ../../docs/04-research/llm-detection:/bench-fixtures:ro
+
+  weaviate-manual:
+    profiles: ["weaviate"]
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.0
+    container_name: attreq_br04_weaviate
+    restart: "no"
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      ENABLE_MODULES: backup-filesystem
+      BACKUP_FILESYSTEM_PATH: /var/lib/weaviate/backups
+      CLUSTER_HOSTNAME: br04-vector
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:15051:50051"
+    volumes:
+      - ${ATTREQ_BENCHMARK_DATA_DIR:-/mnt/storage/attreq/benchmarks}/weaviate:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+  text2vec-transformers:
+    profiles: ["text2vec"]
+    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
+    container_name: attreq_br04_text2vec
+    restart: "no"
+    environment:
+      ENABLE_CUDA: "0"
+    ports:
+      - "127.0.0.1:19090:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/.well-known/ready\", timeout=2)'",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 30s

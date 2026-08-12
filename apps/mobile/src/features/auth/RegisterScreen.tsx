@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/design-system/theme/ThemeProvider';
@@ -13,7 +13,6 @@ import { PrimaryButton } from '@/design-system/components/PrimaryButton';
 import { StepNav } from '@/design-system/components/StepNav';
 import { AttreqIcon } from '@/design-system/icons/AttreqIcon';
 import { useAuthStore, type RegistrationData } from '@/store/auth-store';
-import { requestDeviceLocation, type DeviceLocation } from '@/lib/location/location';
 import { describeAuthError } from '@/lib/api/errors';
 import { useBackHandler } from '@/lib/hooks/useBackHandler';
 
@@ -33,9 +32,6 @@ export function RegisterScreen({ onSignIn, onExit }: { onSignIn: () => void; onE
   const [selected, setSelected] = useState<string[]>([]);
   const [occasions, setOccasions] = useState('');
   const [manualCity, setManualCity] = useState('');
-  const [device, setDevice] = useState<DeviceLocation | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [locError, setLocError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -82,29 +78,11 @@ export function RegisterScreen({ onSignIn, onExit }: { onSignIn: () => void; onE
   const toggleKeyword = (k: string) =>
     setSelected((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
 
-  const getLocation = async () => {
-    if (locating) return;
-    setLocError(null);
-    setLocating(true);
-    try {
-      setDevice(await requestDeviceLocation());
-    } catch (e) {
-      setDevice(null);
-      setLocError(e instanceof Error ? e.message : 'Could not get your location.');
-    } finally {
-      setLocating(false);
-    }
-  };
-
   const onSubmit = async () => {
     setError(null);
     setLoading(true);
     const city = manualCity.trim();
-    const location: RegistrationData['location'] = city
-      ? { kind: 'city', city }
-      : device
-        ? { kind: 'coordinates', latitude: device.latitude, longitude: device.longitude, city: device.city }
-        : undefined;
+    const location: RegistrationData['location'] = city ? { kind: 'city', city } : undefined;
     try {
       await register({ email: email.trim(), fullName, password, styleKeywords: selected, occasions, location });
     } catch (e) {
@@ -113,8 +91,6 @@ export function RegisterScreen({ onSignIn, onExit }: { onSignIn: () => void; onE
       setLoading(false);
     }
   };
-
-  const resolvedCity = device ? device.city ?? 'Location captured' : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.bg }}>
@@ -205,22 +181,8 @@ export function RegisterScreen({ onSignIn, onExit }: { onSignIn: () => void; onE
               </View>
 
               <Card padding={20}>
-                <Pressable
-                  onPress={getLocation}
-                  accessibilityRole="button"
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: t.colors.borderSoft, marginBottom: 18 }}>
-                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: t.colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-                    <AttreqIcon name="location" size={15} color={t.colors.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[body(14, 'medium'), { color: t.colors.text }]}>
-                      {locating ? 'Locating…' : resolvedCity ? `Using: ${resolvedCity}` : 'Use device location'}
-                    </Text>
-                    <MonoLabel>{locError ?? 'For weather-aware suggestions'}</MonoLabel>
-                  </View>
-                  <AttreqIcon name="chevron" size={13} color={t.colors.t3} />
-                </Pressable>
-                <UnderlineInput label="Or enter your city" value={manualCity} onChangeText={setManualCity} autoCapitalize="words" placeholder="New York, London, Tokyo…" testID="register-city" />
+                <UnderlineInput label="Your city" value={manualCity} onChangeText={setManualCity} autoCapitalize="words" placeholder="New York, London, Tokyo…" testID="register-city" />
+                <MonoLabel style={{ marginTop: 8 }}>Used for weather-aware suggestions</MonoLabel>
               </Card>
 
               {error ? <BodyText size={13} color={t.colors.clay} style={{ marginTop: 14 }}>{error}</BodyText> : null}

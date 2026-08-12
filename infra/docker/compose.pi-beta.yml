@@ -1,0 +1,222 @@
+# ATTREQ Raspberry Pi beta stack.  This file deliberately publishes no host
+# ports: the Cloudflare Tunnel is the only ingress path.
+name: attreq-beta
+
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in ATTREQ_ENV_FILE}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in ATTREQ_ENV_FILE}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in ATTREQ_ENV_FILE}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - ${ATTREQ_DATA_DIR:-/mnt/storage/attreq}/postgres:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - ${ATTREQ_DATA_DIR:-/mnt/storage/attreq}/redis:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+        reservations:
+          memory: 64M
+
+  migrations:
+    image: ${ATTREQ_API_IMAGE:-attreq-api:beta}
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    restart: "no"
+    env_file:
+      - ${ATTREQ_ENV_FILE:?Export ATTREQ_ENV_FILE with the mode-0600 Pi secret file}
+    environment: &api-environment
+      # Use production behavior (including TrustedHostMiddleware) even though
+      # this is the invite-only beta deployment.
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      UPLOAD_DIR: /app/uploads
+      WEAVIATE_HOST: weaviate
+      WEAVIATE_PORT: "8080"
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      RERANKER_ENABLED: ${RERANKER_ENABLED:-false}
+    command: ["alembic", "upgrade", "head"]
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 128M
+
+  backend:
+    image: ${ATTREQ_API_IMAGE:-attreq-api:beta}
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${ATTREQ_ENV_FILE:?Export ATTREQ_ENV_FILE with the mode-0600 Pi secret file}
+    environment: *api-environment
+    command: ["uvicorn", "attreq_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - ${ATTREQ_DATA_DIR:-/mnt/storage/attreq}/uploads:/app/uploads
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.3
+    restart: unless-stopped
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in ATTREQ_ENV_FILE}
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "$$TUNNEL_TOKEN"]
+    networks: [internal]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # The official image does not bundle a general HTTP client. This confirms
+      # that its binary remains executable; tunnel connection is checked in logs.
+      test: ["CMD", "cloudflared", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # Disabled unless BR-04 measured it to be safe and valuable. Manual-vector
+  # Weaviate and text2vec are separate profiles because they have independent
+  # benchmark decisions.
+  weaviate:
+    profiles: ["weaviate"]
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.0
+    restart: unless-stopped
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: ${WEAVIATE_DEFAULT_VECTORIZER_MODULE:-none}
+      ENABLE_MODULES: ${WEAVIATE_ENABLE_MODULES:-backup-filesystem}
+      TRANSFORMERS_INFERENCE_API: http://text2vec-transformers:8080
+      BACKUP_FILESYSTEM_PATH: /var/lib/weaviate/backups
+      CLUSTER_HOSTNAME: attreq-weaviate
+    volumes:
+      - ${ATTREQ_DATA_DIR:-/mnt/storage/attreq}/weaviate:/var/lib/weaviate
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/v1/.well-known/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 3G
+        reservations:
+          memory: 1G
+
+  text2vec-transformers:
+    profiles: ["text2vec"]
+    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
+    restart: unless-stopped
+    environment:
+      ENABLE_CUDA: "0"
+    volumes:
+      - ${ATTREQ_DATA_DIR:-/mnt/storage/attreq}/transformer-cache:/root/.cache
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8080/.well-known/ready\", timeout=2)'" ]
+      interval: 20s
+      timeout: 5s
+      retries: 18
+      start_period: 45s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+networks:
+  internal:
+    driver: bridge

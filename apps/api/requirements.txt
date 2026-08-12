@@ -65,6 +65,10 @@ gdown>=5.0.0
 # the model/torch are never imported unless a caller actually enables the flag AND
 # uses the embedding service (see services/ai/fashion_embeddings.py's lazy singleton).
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.2+cpu ; platform_system == "Linux"
+# PyTorch publishes the explicit `+cpu` 2.2.2 wheel for Linux x86_64, but
+# the Linux ARM64 wheel for the same release is named `2.2.2` (and is still
+# CPU-only). Keep both architectures pinned to the same upstream release.
+torch==2.2.2+cpu ; platform_system == "Linux" and platform_machine != "aarch64"
+torch==2.2.2 ; platform_system == "Linux" and platform_machine == "aarch64"
 torch>=2.2.0,<3.0.0 ; platform_system == "Darwin"   # macOS wheel is CPU/MPS already
 transformers>=4.40.0,<5.0.0  # 5.x changed get_image_features to return BaseModelOutputWithPooling; CLIP inference in services/ai/fashion_embeddings.py targets the 4.x tensor API

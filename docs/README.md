@@ -11,19 +11,21 @@ This docs tree is organized to answer four different questions without mixing th
 
 Use this reading order:
 
-1. `00-current-status/00-current-status.md`
-2. `00-current-status/01-task-tracker.md`
-3. `00-current-status/02-next-phase-tickets.md`
-4. the relevant file in `02-implementation/plan/`
-5. `03-execution/tasks/mobile-tasks-v1.md` for current mobile execution work
-6. `04-research/mobile-frontend/` for React Native stack and UI-library decisions
-7. `01-product/` for product vision and longer-term intent
-8. `03-execution/deployment/` for operational backend hosting notes
-9. `99-archive/pre-react-native-transition/` for superseded PWA planning docs
+1. `08-beta-readiness/00-immediate-beta-readiness.md` for the active Pi backend + Android beta execution tracker
+2. `00-current-status/00-current-status.md`
+3. `00-current-status/01-task-tracker.md`
+4. `00-current-status/02-next-phase-tickets.md`
+5. the relevant file in `02-implementation/plan/`
+6. `03-execution/tasks/mobile-tasks-v1.md` for current mobile execution work
+7. `04-research/mobile-frontend/` for React Native stack and UI-library decisions
+8. `01-product/` for product vision and longer-term intent
+9. `03-execution/deployment/` for operational backend hosting notes
+10. `99-archive/pre-react-native-transition/` for superseded PWA planning docs
 
 ## Source Of Truth Rules
 
 - `00-current-status/` tracks current repo truth.
+- `08-beta-readiness/00-immediate-beta-readiness.md` is the active execution tracker for the Raspberry Pi backend and Android GitHub-release beta. It supersedes older VPS+Caddy/EAS assumptions for this beta only.
 - `02-implementation/plan/` tracks the target mobile-first implementation design.
 - `03-execution/tasks/mobile-tasks-v1.md` is the active client execution checklist.
 - `04-research/mobile-frontend/` stores the mobile stack decisions that support the active plan.
@@ -120,6 +122,13 @@ Use this for the recommendation-quality phase that follows beta launch (created 
 - `06-milestone-6-embeddings-reranker.md`: FashionCLIP embeddings in Weaviate, feedback propagation, optional LLM re-ranker
 - `07-milestone-7-retention-trust.md`: wardrobe stats, multi-photo items, archive semantics, batch-capture onboarding
 
+### `08-beta-readiness/`
+
+Use this for the active invite-only beta phase and the intentionally deferred follow-up work.
+
+- `00-immediate-beta-readiness.md`: executable tracker for the Pi backend, Cloudflare Tunnel/R2, optional-component benchmark, Android release signing, GitHub prereleases, and the physical-device beta gate
+- `01-post-beta-backlog.md`: deferred work with triggers, scope, and acceptance criteria so it remains actionable without competing with beta blockers
+
 ### `99-archive/`
 
 Use this for non-authoritative historical docs.
@@ -130,7 +139,7 @@ Use this for non-authoritative historical docs.
 
 - Current project status: `00-current-status/00-current-status.md`
 - Done vs pending work: `00-current-status/01-task-tracker.md`
-- What should be built next: `05-roadmap/00-roadmap-overview.md` (active launch roadmap), then `07-recommendation-intelligence/00-roadmap-overview.md` (next phase), then `00-current-status/02-next-phase-tickets.md`
+- What should be built next: `08-beta-readiness/00-immediate-beta-readiness.md`; use `08-beta-readiness/01-post-beta-backlog.md` only after the immediate beta gate or when an explicit trigger fires
 - Recommendation/AI research evidence: `04-research/wardrobe-ai-knowledge-base.md`
 - Mobile implementation design: `02-implementation/plan/06-frontend.md`
 - Auth/session behavior: `02-implementation/plan/07-authentication.md`

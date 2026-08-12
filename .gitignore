@@ -36,6 +36,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!infra/docker/.env.pi-beta.example
 !.pi-dev.env
 
 # Runtime artifacts

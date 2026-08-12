@@ -8,12 +8,13 @@ AI-powered wardrobe management and outfit recommendation platform. Users upload 
 
 Read in this order when context needed:
 1. `docs/README.md` — navigation guide
-2. `docs/00-current-status/00-current-status.md` — current implementation truth
-3. `docs/05-roadmap/00-roadmap-overview.md` — active launch roadmap (milestone files are self-contained and executable)
-4. `docs/02-implementation/plan/06-frontend.md` — authoritative React Native plan
-5. `docs/03-execution/tasks/mobile-tasks-v1.md` — active mobile checklist
+2. `docs/08-beta-readiness/00-immediate-beta-readiness.md` — active Raspberry Pi backend + Android GitHub-release beta tracker (self-contained and executable)
+3. `docs/00-current-status/00-current-status.md` — current implementation truth
+4. `docs/05-roadmap/00-roadmap-overview.md` — older launch roadmap; use for rationale, while `08-beta-readiness/` governs the current Pi beta
+5. `docs/02-implementation/plan/06-frontend.md` — authoritative React Native plan
+6. `docs/03-execution/tasks/mobile-tasks-v1.md` — active mobile checklist
 
-Also: `docs/Pending.md` (known-gaps matrix), `docs/01-product/`, `docs/02-implementation/plan/` for product/planning context. Conflict rule: code wins over docs; `00-current-status/` wins over other docs.
+Also: `docs/08-beta-readiness/01-post-beta-backlog.md` (deferred work), `docs/Pending.md` (older known-gaps matrix), `docs/01-product/`, `docs/02-implementation/plan/` for product/planning context. Conflict rule: code wins over docs; `00-current-status/` wins for implementation truth; `08-beta-readiness/` wins for current execution order.
 
 ## Monorepo Layout
 
@@ -245,6 +246,20 @@ A tracked `post-commit` git hook (`.githooks/post-commit`) prints a push reminde
 ```bash
 git config core.hooksPath .githooks
 ```
+
+## Android Beta APK — Publish Through GitHub Releases
+
+Every distributed Android beta build must be traceable to a pushed Git tag and published as a GitHub prerelease. Building an APK locally without publishing the matching release is not milestone completion unless the user explicitly defers publication.
+
+- The active runbook is `docs/08-beta-readiness/00-immediate-beta-readiness.md`, especially BR-08 through BR-10.
+- Commit and push source code; **never commit APK/AAB build outputs** from `apps/mobile/android/app/build/`.
+- Build only from a clean, reviewed commit. The Android `versionCode`, `versionName`, Git tag, and GitHub Release title must agree.
+- A distributed beta must use the permanent release/upload keystore. A debug-signed APK may be published only when the release title and notes explicitly say `development build`, and never as the beta milestone artifact.
+- Never commit keystores, aliases/passwords, secret-bearing `key.properties`, or secret-bearing Gradle properties. Use local secret storage or GitHub Actions secrets.
+- Before tagging: run mobile typecheck/tests, the relevant backend verification, `assembleRelease`, `apksigner verify --print-certs`, and a SHA-256 checksum.
+- Upload the APK and checksum as GitHub Release assets with `gh release create --prerelease` (or the verified release workflow). Do not use raw GitHub scraping.
+- Pushing a tag and creating a release are outward-facing actions: obtain user confirmation immediately before doing them unless the user already explicitly requested that exact publish action.
+- Do not mark an Android beta milestone complete until the tag and GitHub prerelease are visible, or the user explicitly defers them.
 
 ## Library Docs & Implementation Verification
 

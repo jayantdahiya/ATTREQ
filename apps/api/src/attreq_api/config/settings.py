@@ -1,6 +1,7 @@
 """Core configuration settings for ATTREQ backend."""
 
 import json
+from ipaddress import ip_network
 
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
@@ -65,6 +66,43 @@ class Settings(BaseSettings):
     redis_host: str = Field(default="redis", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
     redis_password: str | None = Field(default=None, alias="REDIS_PASSWORD")
+
+    # Public-endpoint rate limiting. Counters are stored in Redis and fail open
+    # when Redis is unavailable so a cache outage does not take down the API.
+    rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
+    rate_limit_auth_attempts: int = Field(default=10, ge=1, alias="RATE_LIMIT_AUTH_ATTEMPTS")
+    rate_limit_auth_window_seconds: int = Field(
+        default=60, ge=1, alias="RATE_LIMIT_AUTH_WINDOW_SECONDS"
+    )
+    rate_limit_wardrobe_images: int = Field(
+        default=20, ge=1, alias="RATE_LIMIT_WARDROBE_IMAGES"
+    )
+    rate_limit_wardrobe_window_seconds: int = Field(
+        default=3600, ge=1, alias="RATE_LIMIT_WARDROBE_WINDOW_SECONDS"
+    )
+    rate_limit_style_dna_builds: int = Field(
+        default=5, ge=1, alias="RATE_LIMIT_STYLE_DNA_BUILDS"
+    )
+    rate_limit_style_dna_window_seconds: int = Field(
+        default=3600, ge=1, alias="RATE_LIMIT_STYLE_DNA_WINDOW_SECONDS"
+    )
+    rate_limit_recommendation_refreshes: int = Field(
+        default=20, ge=1, alias="RATE_LIMIT_RECOMMENDATION_REFRESHES"
+    )
+    rate_limit_recommendation_window_seconds: int = Field(
+        default=3600, ge=1, alias="RATE_LIMIT_RECOMMENDATION_WINDOW_SECONDS"
+    )
+
+    # Disabled by default: a directly reachable client can forge forwarded-IP
+    # headers. Enable only when every request reaches the API through a trusted
+    # reverse proxy (for the Pi beta, the local cloudflared container/service),
+    # and restrict its source address/network below.
+    rate_limit_trust_proxy_headers: bool = Field(
+        default=False, alias="RATE_LIMIT_TRUST_PROXY_HEADERS"
+    )
+    rate_limit_trusted_proxy_cidrs: list[str] = Field(
+        default=[], alias="RATE_LIMIT_TRUSTED_PROXY_CIDRS"
+    )
 
     # Weaviate settings
     weaviate_host: str = Field(default="weaviate", alias="WEAVIATE_HOST")
@@ -157,6 +195,22 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return v
         raise ValueError("Trusted hosts must be a string or list")
+
+    @validator("rate_limit_trusted_proxy_cidrs", pre=True)
+    def assemble_rate_limit_trusted_proxy_cidrs(cls, v):
+        """Parse and validate proxy IP/CIDR allowlists from env input."""
+        if isinstance(v, str):
+            raw = v.strip()
+            values = json.loads(raw) if raw.startswith("[") else raw.split(",")
+        elif isinstance(v, list):
+            values = v
+        else:
+            raise ValueError("Trusted proxy CIDRs must be a string or list")
+
+        normalized = [str(value).strip() for value in values if str(value).strip()]
+        for value in normalized:
+            ip_network(value, strict=False)
+        return normalized
 
     @validator("secret_key")
     def validate_secret_key(cls, v):

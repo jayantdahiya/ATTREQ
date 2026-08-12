@@ -72,7 +72,13 @@ async def process_style_photos(
     # (the classifier is path-based, so photos are staged in a temp workspace)
     semaphore = asyncio.Semaphore(settings.style_dna_llm_concurrency)
 
-    async def extract(file_path: str) -> dict[str, Any]:
+    async def extract(file_path: str, stagger_seconds: float) -> dict[str, Any]:
+        # Spread request starts out a bit so a batch of N photos doesn't fire
+        # N near-simultaneous provider calls — on top of the classifier's own
+        # 429 retry/backoff, this reduces how often the burst trips Groq's
+        # per-minute rate limit in the first place.
+        if stagger_seconds:
+            await asyncio.sleep(stagger_seconds)
         async with semaphore:
             return await classifier.analyze_image(file_path, EXTRACTION_PROMPT)
 
@@ -85,7 +91,8 @@ async def process_style_photos(
                 temp_paths.append(str(temp_path))
 
             raw_extractions = await asyncio.gather(
-                *[extract(tp) for tp in temp_paths], return_exceptions=True
+                *[extract(tp, i * 0.4) for i, tp in enumerate(temp_paths)],
+                return_exceptions=True,
             )
     except Exception as e:
         logger.error(f"Style DNA extraction failed: {e}")
@@ -93,18 +100,24 @@ async def process_style_photos(
 
     # 3. Persist per-photo records
     photo_records = []
+    provider_failure_count = 0
     for i, ((file_path, file_url, _, _), extraction_result) in enumerate(
         zip(saved_photos, raw_extractions, strict=False)
     ):
         if isinstance(extraction_result, Exception):
             logger.warning(f"Extraction failed for photo {i}: {extraction_result}")
+            # Image-quality failures are successful classifier responses with
+            # ``usable=false``. Any exception here instead means the analysis
+            # service failed (HTTP/transport errors, malformed provider JSON,
+            # or deployment configuration), so do not blame the user's photo.
+            provider_failure_count += 1
             photo = await style_dna_crud.create_photo(
                 db=db,
                 user_id=user.id,
                 file_path=file_path,
                 file_url=file_url,
                 quality_ok=False,
-                quality_reason="Extraction failed",
+                quality_reason="Photo analysis service temporarily unavailable",
                 extraction=None,
             )
         else:
@@ -129,14 +142,19 @@ async def process_style_photos(
     ]
 
     if len(usable_extractions) < settings.style_dna_min_photos:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Only {len(usable_extractions)} of {len(photo_files)} photos were usable. "
+        was_usable = "was" if len(usable_extractions) == 1 else "were"
+        if provider_failure_count:
+            detail = (
+                "Our photo analysis service is temporarily unavailable — "
+                "please wait a minute and try again."
+            )
+        else:
+            detail = (
+                f"Only {len(usable_extractions)} of {len(photo_files)} photos {was_usable} usable. "
                 f"Need at least {settings.style_dna_min_photos}. "
                 "Please upload clearer outfit photos."
-            ),
-        )
+            )
+        raise HTTPException(status_code=422, detail=detail)
 
     # 5. Synthesis (text-only call using style_signals from usable photos)
     style_signals_list = [e["style_signals"] for e in usable_extractions if "style_signals" in e]

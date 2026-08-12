@@ -23,6 +23,7 @@ from attreq_api.schemas.telemetry import (
 )
 from attreq_api.services.cache.invalidation import invalidate_daily_suggestions
 from attreq_api.services.cache.redis_client import redis_cache
+from attreq_api.services.rate_limit import enforce_user_rate_limit
 from attreq_api.services.recommendation.algorithm import generate_daily_outfits
 from attreq_api.services.recommendation.reranker import rerank
 from attreq_api.services.recommendation.vibe import VALID_OCCASION_HINTS
@@ -33,6 +34,43 @@ from attreq_api.services.recommendation.weight_fitting import get_active_weights
 # plan §9: "the reranker needs a top-5" (generate_daily_outfits's diversity
 # dedup otherwise never produces more than the display count on its own).
 RERANKER_POOL_SIZE = 5
+
+
+async def _resolve_weather(
+    current_user: User, lat: float | None, lon: float | None
+) -> dict:
+    """Resolve current weather for a request, preferring explicit query coords,
+    then the user's saved coordinates, then their saved city name (typed-city
+    registration never geocodes to lat/lon — see `saved_city` on `User` —
+    so this is the only path that makes weather-aware recommendations work
+    for users who didn't grant device location).
+    """
+    weather_lat = lat
+    weather_lon = lon
+    if weather_lat is None or weather_lon is None:
+        if current_user.saved_latitude is not None and current_user.saved_longitude is not None:
+            weather_lat = current_user.saved_latitude
+            weather_lon = current_user.saved_longitude
+        elif current_user.saved_city:
+            return await weather_service.get_weather_by_city(current_user.saved_city)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No location available. Please provide coordinates or set your location in profile.",
+            )
+    return await weather_service.get_current_weather(weather_lat, weather_lon)
+
+
+async def _enforce_force_refresh_rate_limit(force_refresh: bool, user_id: UUID) -> None:
+    """Charge only explicit regenerations; cached recommendation reads stay free."""
+    if not force_refresh:
+        return
+    await enforce_user_rate_limit(
+        bucket="recommendation-refreshes",
+        user_id=user_id,
+        limit=settings.rate_limit_recommendation_refreshes,
+        window_seconds=settings.rate_limit_recommendation_window_seconds,
+    )
 
 # RI-5 (Task 5.3): swipe deck. Adaptation note: `composition.select_anchors`
 # hard-caps anchor selection at `MAX_ANCHORS == 5` regardless of the
@@ -104,6 +142,8 @@ async def get_daily_suggestions(
     if normalized_hint not in VALID_OCCASION_HINTS:
         normalized_hint = None
 
+    await _enforce_force_refresh_rate_limit(force_refresh, current_user.id)
+
     # v2 (RI-4): the cached payload shape changed (fullbody/footwear/outerwear
     # slots, explanation/confidence/rediscovery) — bumping the key namespace
     # retires every pre-deploy cache entry instead of 500ing on
@@ -129,26 +169,12 @@ async def get_daily_suggestions(
             cached_suggestions["cached"] = True
             return DailySuggestionsResponse(**cached_suggestions)
 
-    # Step 2: Determine location coordinates
-    weather_lat = lat
-    weather_lon = lon
-
-    # If no coordinates provided, use user's saved location
-    if weather_lat is None or weather_lon is None:
-        if current_user.saved_latitude is None or current_user.saved_longitude is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No location available. Please provide coordinates or set your location in profile.",
-            )
-        weather_lat = current_user.saved_latitude
-        weather_lon = current_user.saved_longitude
-        logger.info(
-            f"Using saved location for user {current_user.id}: {weather_lat}, {weather_lon}"
-        )
-
-    # Step 3: Fetch weather data (with its own cache)
+    # Step 2 & 3: Resolve location (explicit coords > saved coords > saved
+    # city) and fetch weather data (with its own cache)
     try:
-        weather_data = await weather_service.get_current_weather(weather_lat, weather_lon)
+        weather_data = await _resolve_weather(current_user, lat, lon)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch weather: {str(e)}")
         raise HTTPException(
@@ -313,19 +339,10 @@ async def get_swipe_deck(
     recently-worn exclusion to `SWIPE_DECK_RECENTLY_WORN_DAYS` — a rating
     exercise, not "wear this today".
     """
-    weather_lat = lat
-    weather_lon = lon
-    if weather_lat is None or weather_lon is None:
-        if current_user.saved_latitude is None or current_user.saved_longitude is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No location available. Please provide coordinates or set your location in profile.",
-            )
-        weather_lat = current_user.saved_latitude
-        weather_lon = current_user.saved_longitude
-
     try:
-        weather_data = await weather_service.get_current_weather(weather_lat, weather_lon)
+        weather_data = await _resolve_weather(current_user, lat, lon)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch weather for swipe deck: {str(e)}")
         raise HTTPException(
