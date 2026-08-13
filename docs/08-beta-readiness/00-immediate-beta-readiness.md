@@ -1,7 +1,7 @@
 # ATTREQ Beta Readiness — Immediate Execution Tracker
 
 > **Status:** Active — next work to execute
-> **Last audited:** 2026-08-12
+> **Last audited:** 2026-08-14
 > **Goal:** Run an invite-only Android beta against the Raspberry Pi backend through a stable Cloudflare hostname, then publish every beta APK as a traceable GitHub prerelease.
 > **Audience:** An LLM or developer should be able to execute this tracker without prior chat history.
 
@@ -15,18 +15,19 @@ The APK must call the Raspberry Pi backend through HTTPS, not the development ba
 
 ## Current Verified Truth
 
-These facts were checked against the repository and machines on 2026-08-12. Code wins if any fact later becomes stale.
+These facts were checked against the repository and machines on 2026-08-14. Code wins if any fact later becomes stale.
 
 ### Repository and quality baseline
 
-- Audit baseline: `main` was aligned with `origin/main`; implementation is now isolated on `codex/beta-readiness-implementation`.
+- The beta-readiness implementation and Android release work are merged directly into and pushed on `main`.
 - Recommendation Intelligence RI-1 through RI-7 is merged into `main`, despite stale `Not started` headers in some individual milestone files.
-- Backend verification passes when pointed at the ATTREQ PostgreSQL instance on host port `5433`: **381 tests passed** and Ruff passed.
-- Android verification passes: TypeScript passes and **56 tests passed**.
-- `./gradlew :app:assembleRelease --no-daemon` succeeds locally and creates a roughly 66 MB APK.
-- The current Android `release` build is still signed by `Android Debug`; it is not the permanent beta/release signing configuration.
+- Backend verification passes when pointed at the ATTREQ PostgreSQL instance on host port `5433`: **409 tests passed** and Ruff passed.
+- Android verification passes: TypeScript passes and **61 tests passed**.
+- A clean-checkout signed release build succeeds for all four Android ABIs and creates a 68.8 MB APK.
+- The permanent RSA-4096 ATTREQ upload key is stored outside Git, backed up off-machine, and its password is held in the macOS Keychain. Release builds fail closed when signing inputs are absent.
 - `.github/workflows/mobile-ci.yml` builds only `assembleDebug`; it does not publish a release APK.
 - GitHub already contains the development release/tag `v0.1.0-android`.
+- GitHub prerelease [`v0.2.0-beta.1`](https://github.com/jayantdahiya/ATTREQ/releases/tag/v0.2.0-beta.1) contains the release-signed APK and its SHA-256 checksum from tagged commit `9e49837a81fbf714dccbe27737095dd02cf9708a`.
 
 ### Preserve the existing working tree
 
@@ -49,7 +50,7 @@ There are also unrelated untracked paths. Do not stage them with a blanket `git 
 - System disk: approximately 59 GB microSD
 - Data disk: approximately 233 GB ext4 mounted at `/mnt/storage`
 - Network: wired Ethernet
-- Docker Engine, Docker Compose, and `cloudflared` are not installed yet.
+- Docker Engine 29.7.2 and Docker Compose 5.4.0 are installed from Docker's official Ubuntu repository. The repository is cloned at `/opt/attreq`; optional-component benchmarking is in progress before the production stack starts.
 
 The Pi is suitable for a small invite-only beta. Put PostgreSQL data and backups on `/mnt/storage`, not the microSD card.
 
@@ -81,11 +82,9 @@ flowchart LR
 
 Do not invent these values or place credentials in documentation:
 
-1. Confirm the beta hostname: migrate `dev-server-1.online`, or create `api.<owned-domain>`.
-2. Confirm Cloudflare R2 use for beta images. Recommended answer: yes.
-3. Choose a secure backup location for the Android upload/release keystore. It must not exist only on one laptop.
-4. Choose GitHub Release visibility: public repository/release, private repository with tester access, or a separate public downloads repository.
-5. Confirm that the Pi may be changed by installing Docker and `cloudflared` and writing application data under `/mnt/storage/attreq`.
+The user resolved the original decisions on 2026-08-14: retain and migrate `dev-server-1.online`, use private Cloudflare R2, publish the Android beta in the public repository, and authorize the Pi installation under `/mnt/storage/attreq`. The permanent Android key is backed up outside the repository.
+
+Remaining user-only acceptance is a physical Android smoke test over mobile data after the Pi cutover. No infrastructure secret needs to be pasted into chat.
 
 Never ask the user to paste API keys, tunnel tokens, database passwords, or keystore passwords into chat or commit them to Git. Use configured secret stores, local environment files with mode `0600`, or GitHub Actions secrets.
 
@@ -95,36 +94,38 @@ The ten work packages below are the known immediate beta-readiness scope. Finish
 
 | ID | Work package | Depends on | Status |
 |---|---|---|---|
-| BR-01 | Finish and test the reliability patch | — | Implemented and verified locally; commit/push pending |
-| BR-02 | Make Android location UX honest | BR-01 | Implemented and verified locally; commit/push pending |
-| BR-03 | Add protection for public, costly endpoints | — | Application limiter implemented and verified; Cloudflare rule remains BR-06 |
-| BR-04 | Benchmark optional AI/vector components on the Pi and record the decision | — | Local tooling ready; live Pi run awaits approval |
-| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Repository stack ready and verified; live deployment awaits approval/results |
-| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Not started |
-| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | Not started |
-| BR-08 | Configure durable Android signing, versioning, and API URL selection | BR-06 | Not started |
-| BR-09 | Publish the beta APK through GitHub Releases | BR-08 | Not started |
+| BR-01 | Finish and test the reliability patch | — | Complete; pushed on `main` |
+| BR-02 | Make Android location UX honest | BR-01 | Complete; pushed on `main` |
+| BR-03 | Add protection for public, costly endpoints | — | Application limiter complete; edge rule remains part of BR-06 |
+| BR-04 | Benchmark optional AI/vector components on the Pi and record the decision | — | Live Pi benchmarks in progress |
+| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Docker/repository/secret prerequisites ready; stack waits for BR-04 |
+| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Dedicated `attreq-pi-beta` tunnel created; DNS cutover waits for Pi health |
+| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | Existing private R2 create/read/delete probe passed; live storage/backup/monitoring checks remain |
+| BR-08 | Configure durable Android signing, versioning, and API URL selection | BR-06 | Complete; release URL stays stable across the pending hostname cutover |
+| BR-09 | Publish the beta APK through GitHub Releases | BR-08 | Complete; public prerelease `v0.2.0-beta.1` published |
 | BR-10 | Run the remote-device beta gate and close the milestone | BR-06, BR-07, BR-09 | Not started |
 
-## Implementation Progress — 2026-08-12
+## Implementation Progress — 2026-08-14
 
-The current local wave deliberately stops before live Pi, Cloudflare, credential, GitHub, or release-signing mutations.
+The code wave is pushed; the release is published; the live Pi/R2/tunnel wave is active.
 
 - **BR-01:** saved-city weather fallback now serves both daily suggestions and the swipe deck; Groq calls have bounded retries for 429/502/503/504, capped backoff, and a narrowly gated Qwen reasoning setting; Style DNA distinguishes unusable photos from HTTP, transport, malformed-output, and deployment failures; mobile Style DNA build calls use a 180-second timeout. Direct backend and mobile regression tests were added.
 - **BR-02:** registration no longer advertises a device-location action that deterministically fails. Manual city entry is the supported beta path and its registration payload is tested.
 - **BR-03:** a reusable Redis/Lua fixed-window limiter now protects shared auth, wardrobe-image, Style-DNA-build, and explicit recommendation-refresh budgets. Batch uploads charge by image count. It emits a stable `429` with `Retry-After`, hashes subjects in Redis keys, logs and fails open when Redis is unavailable, and trusts `CF-Connecting-IP`/`X-Forwarded-For` only when proxy trust is explicitly enabled and the immediate peer matches an allowlisted CIDR.
-- **BR-04:** the reproducible harness, synthetic reranker cases, loopback-only benchmark Compose profiles, and [BR-04 runbook](02-br04-pi-benchmark-runbook.md) are ready. Native ARM64 manifests were verified for the pinned Weaviate and MiniLM images. The backend dependency pins now select `torch==2.2.2` on Linux AArch64 because the `2.2.2+cpu` wheel name is unavailable there, while x86_64 retains the explicit CPU wheel. The Pi has not been modified and no enable/disable decision will be recorded until measurements exist.
-- **BR-05:** the [Pi stack runbook](03-br05-pi-stack-runbook.md), production Compose, names-only env template, and safe operator script are ready. The minimal stack has PostgreSQL 15, Redis 7, one-shot migrations, FastAPI, and a pinned ARM64-capable `cloudflared`; it publishes no host ports and stores persistent bind data under `/mnt/storage/attreq`. Weaviate and `text2vec-transformers` remain independent profiles, while FashionCLIP and reranking remain independent flags. Backup, isolated restore drill, reboot checks, and compatible-image rollback have bounded commands. No Pi, tunnel, DNS, secret, or deployment mutation has occurred.
+- **BR-04:** the reproducible harness, synthetic reranker cases, loopback-only benchmark Compose profiles, and [BR-04 runbook](02-br04-pi-benchmark-runbook.md) are active on the Pi. Native ARM64 manifests were verified for the pinned Weaviate and MiniLM images. The dependency pins select `torch==2.2.2` on Linux AArch64 because the `2.2.2+cpu` wheel name is x86-only. Manual-vector Weaviate passed; `text2vec-transformers` failed the sustained CPU gate; FashionCLIP and reranker measurements are still running.
+- **BR-05:** the [Pi stack runbook](03-br05-pi-stack-runbook.md), production Compose, names-only env template, and safe operator script are ready. The minimal stack has PostgreSQL 15, Redis 7, one-shot migrations, FastAPI, and a pinned ARM64-capable `cloudflared`; it publishes no host ports and stores persistent bind data under `/mnt/storage/attreq`. Weaviate and `text2vec-transformers` remain independent profiles, while FashionCLIP and reranking remain independent flags. Docker/Compose are installed, `/opt/attreq` is at a reviewed commit, and production secrets are staged outside Git; the stack remains stopped until BR-04 finishes.
+- **BR-06/BR-07:** the dedicated `attreq-pi-beta` named tunnel exists without changing live DNS. The existing private R2 bucket and scoped credentials passed a non-user-data create/read/delete probe; the probe object was deleted. The Pi's external mode-`0600` environment file contains generated production database/JWT values and the configured R2/provider values without exposing them in Git or chat.
+- **BR-08/BR-09:** version code `2` / version `0.2.0-beta.1`, permanent external signing, release/development API separation, clean-build native compatibility, signer verification, checksum generation, tag, and GitHub prerelease are complete. The APK SHA-256 is `7920a34f1d2102bf83ec82c7119e466fc3268dcd780062764e1b5b51616ca487`.
 
 Integrated local verification before repository commit:
 
 - backend: 409 tests passed;
 - backend Ruff: passed;
 - mobile TypeScript: passed;
-- mobile Jest: 11 suites / 60 tests passed;
+- mobile Jest: 12 suites / 61 tests passed;
 - BR-04/BR-05: Python compilation, three-case reranker dry-run, two architecture-pin tests, both Docker Compose configurations (all optional profiles), shell syntax, pinned `cloudflared` registry/ARM64 manifest, and diff whitespace checks passed.
 
-No item is marked complete yet because the mandatory milestone commit/push boundary and, for BR-04/BR-05, the live Pi acceptance criteria remain open.
+BR-01, BR-02, BR-08, and BR-09 are complete and pushed. BR-03's application layer is complete. BR-04 through BR-07 and the physical-device BR-10 acceptance gate remain open.
 
 ## BR-01 — Finish and Test the Reliability Patch
 
@@ -258,6 +259,17 @@ The components are distinct and must be evaluated separately:
 - Keep a feature flag off when the test fails. Do not delete the implementation.
 - The LLM reranker may be enabled independently of FashionCLIP/transformer services.
 - Never enable all components at once without the one-at-a-time results.
+
+### Live results — 2026-08-14
+
+| Component | Native ARM64 | Startup | Resource/latency result | Decision |
+|---|---|---:|---|---|
+| FashionCLIP | In progress | In progress | Independent cold/warm measurement is running | Pending |
+| Weaviate manual vectors | Yes | 12.170 s cold / 3.395 s warm | 47.3 MiB peak; 22.5% host CPU mean; 55.1°C peak; 200/200 inserts and 60/60 queries succeeded; warm query p95 1.98 ms | **Pass; enable only with manual FashionCLIP embeddings** |
+| `text2vec-transformers` | Yes | 11.519 s cold / 6.600 s warm | 360.8 MiB observed; 384-d vectors; warm p95 50.8 ms, but confirmation load sustained 92.0% host CPU mean; 61.7°C peak | **Fail the <85% CPU gate; keep the `text2vec` profile disabled for beta** |
+| Groq reranker | Remote | In progress | Independent synthetic ranking/latency measurement is running | Pending |
+
+The isolated tests did not deploy the production API, so the selected final topology still requires the BR-05 health/recommendation impact and reboot gates. Raw JSON remains on the Pi under `/mnt/storage/attreq/benchmarks/results/` and is intentionally excluded from Git.
 
 ### Exit criteria
 

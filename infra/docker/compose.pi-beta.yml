@@ -133,11 +133,20 @@ services:
           memory: 512M
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.7.3
+    image: cloudflare/cloudflared:2026.8.1
     restart: unless-stopped
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in ATTREQ_ENV_FILE}
-    command: ["tunnel", "--no-autoupdate", "run", "--token", "$$TUNNEL_TOKEN"]
+    command:
+      [
+        "tunnel",
+        "--no-autoupdate",
+        "--url",
+        "http://backend:8000",
+        "run",
+        "--token",
+        "$$TUNNEL_TOKEN",
+      ]
     networks: [internal]
     depends_on:
       backend:

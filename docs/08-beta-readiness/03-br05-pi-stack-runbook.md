@@ -115,7 +115,7 @@ docker compose --env-file "$ATTREQ_ENV_FILE" \
   -f infra/docker/compose.pi-beta.yml logs --tail=100 migrations cloudflared
 ```
 
-BR-06 then configures the named tunnel's public hostname to route to `http://backend:8000` in this stack. Verify from mobile data only after the hostname is switched:
+The connector command explicitly routes the named tunnel to `http://backend:8000`; it does not depend on a container-local `localhost` origin. BR-06 points the chosen DNS hostname at that named tunnel. Verify from mobile data only after the hostname is switched:
 
 ```bash
 curl -fsS https://<chosen-beta-hostname>/health
