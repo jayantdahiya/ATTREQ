@@ -29,11 +29,12 @@ _HF_MODEL = "patrickjohncyh/fashion-clip"
 
 
 class FashionEmbeddingsService:
-    """Lazy-loaded FashionCLIP wrapper (transformers `CLIPModel`/`CLIPProcessor`)."""
+    """Lazy-loaded FashionCLIP wrapper with separate image/text processors."""
 
     def __init__(self) -> None:
         self._model = None
-        self._processor = None
+        self._image_processor = None
+        self._tokenizer = None
         self._device = "cpu"
         # Guards both load AND inference — a torch forward pass is not
         # guaranteed reentrant across threads for a single shared model
@@ -52,11 +53,15 @@ class FashionEmbeddingsService:
                 return True
             try:
                 import torch
-                from transformers import CLIPModel, CLIPProcessor
+                from transformers import CLIPImageProcessor, CLIPModel, CLIPTokenizerFast
 
                 self._device = "mps" if torch.backends.mps.is_available() else "cpu"
                 self._model = CLIPModel.from_pretrained(_HF_MODEL).to(self._device).eval()
-                self._processor = CLIPProcessor.from_pretrained(_HF_MODEL)
+                # The FashionCLIP repository's combined CLIPProcessor can route
+                # an image-only call through its tokenizer with newer 4.x
+                # Transformers releases. Keep the two modalities independent.
+                self._image_processor = CLIPImageProcessor.from_pretrained(_HF_MODEL)
+                self._tokenizer = CLIPTokenizerFast.from_pretrained(_HF_MODEL)
                 logger.info(f"FashionCLIP loaded on {self._device}")
                 return True
             except Exception as e:
@@ -85,7 +90,7 @@ class FashionEmbeddingsService:
 
             with self._lock:
                 img = Image.open(image_path).convert("RGB")
-                inputs = self._processor(images=img, return_tensors="pt").to(self._device)
+                inputs = self._image_processor(images=img, return_tensors="pt").to(self._device)
                 with torch.no_grad():
                     feats = self._model.get_image_features(**inputs)
                 vec = feats[0].cpu().numpy()
@@ -108,9 +113,7 @@ class FashionEmbeddingsService:
             import torch
 
             with self._lock:
-                inputs = self._processor(text=labels, return_tensors="pt", padding=True).to(
-                    self._device
-                )
+                inputs = self._tokenizer(labels, return_tensors="pt", padding=True).to(self._device)
                 with torch.no_grad():
                     feats = self._model.get_text_features(**inputs)
                 arr = feats.cpu().numpy()

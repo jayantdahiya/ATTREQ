@@ -36,8 +36,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
-from uuid import UUID, uuid4
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from uuid import UUID
 
 SCHEMA_VERSION = 1
 
@@ -150,8 +154,12 @@ class HostStatsSampler:
         if self._thread:
             self._thread.join(timeout=max(2.0, self.interval_seconds * 3))
         cpus = [sample["cpu_percent"] for sample in self.samples if "cpu_percent" in sample]
-        available = [sample["available_mib"] for sample in self.samples if "available_mib" in sample]
-        temperatures = [sample["temperature_c"] for sample in self.samples if "temperature_c" in sample]
+        available = [
+            sample["available_mib"] for sample in self.samples if "available_mib" in sample
+        ]
+        temperatures = [
+            sample["temperature_c"] for sample in self.samples if "temperature_c" in sample
+        ]
         return {
             "sample_count": len(self.samples),
             "cpu_percent_peak": round(max(cpus), 3) if cpus else None,
@@ -359,7 +367,9 @@ def _load_probe_spec(path: str | None) -> list[Probe]:
     return probes
 
 
-def _run_measured(args: argparse.Namespace, workload: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+def _run_measured(
+    args: argparse.Namespace, workload: Callable[[], dict[str, Any]]
+) -> dict[str, Any]:
     probes = ProbeSampler(_load_probe_spec(args.probe_spec), args.sample_interval)
     containers = DockerStatsSampler(args.docker_container, args.sample_interval)
     host_stats = HostStatsSampler(args.sample_interval)
@@ -396,10 +406,7 @@ def _run_measured(args: argparse.Namespace, workload: Callable[[], dict[str, Any
 
 
 def _fashionclip(args: argparse.Namespace) -> dict[str, Any]:
-    from attreq_api.services.ai.fashion_embeddings import (
-        EMBEDDING_DIM,
-        FashionEmbeddingsService,
-    )
+    from attreq_api.services.ai.fashion_embeddings import EMBEDDING_DIM, FashionEmbeddingsService
 
     image_paths = [Path(path) for path in args.image]
     if not image_paths or any(not path.is_file() for path in image_paths):
@@ -475,9 +482,7 @@ def _weaviate(args: argparse.Namespace) -> dict[str, Any]:
         client.collections.create(
             name=collection_name,
             vectorizer_config=Configure.Vectorizer.none(),
-            vector_index_config=Configure.VectorIndex.hnsw(
-                distance_metric=VectorDistances.COSINE
-            ),
+            vector_index_config=Configure.VectorIndex.hnsw(distance_metric=VectorDistances.COSINE),
             properties=[
                 Property(name="itemId", data_type=DataType.TEXT),
                 Property(name="userId", data_type=DataType.TEXT),
@@ -521,7 +526,11 @@ def _weaviate(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _extract_vector(payload: Any) -> list[float] | None:
-    if isinstance(payload, list) and payload and all(isinstance(item, (int, float)) for item in payload):
+    if (
+        isinstance(payload, list)
+        and payload
+        and all(isinstance(item, (int, float)) for item in payload)
+    ):
         return [float(item) for item in payload]
     if isinstance(payload, dict):
         for key in ("vector", "vectors", "embeddings"):
@@ -769,6 +778,21 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sample-interval", type=float, default=0.5)
 
 
+def _default_compose_file() -> Path:
+    """Resolve the repository Compose file without assuming script depth.
+
+    The harness is also copied into a shallow container path for inner
+    FashionCLIP runs, where ``parents[3]`` does not exist. Component commands
+    do not use this default, but argparse constructs every subparser eagerly.
+    """
+    script = Path(__file__).resolve()
+    for parent in script.parents:
+        candidate = parent / "infra/docker/compose.pi-benchmark.yml"
+        if candidate.is_file():
+            return candidate
+    return Path("infra/docker/compose.pi-benchmark.yml")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="component", required=True)
@@ -782,7 +806,7 @@ def _parser() -> argparse.ArgumentParser:
         "service-startup", help="Start one disposable benchmark service and measure readiness"
     )
     _add_common(startup)
-    default_compose = Path(__file__).resolve().parents[3] / "infra/docker/compose.pi-benchmark.yml"
+    default_compose = _default_compose_file()
     startup.add_argument("--compose-file", default=str(default_compose))
     startup.add_argument("--profile", required=True)
     startup.add_argument("--service", required=True)

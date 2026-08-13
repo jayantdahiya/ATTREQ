@@ -51,7 +51,9 @@ onnxruntime>=1.16.0
 Pillow>=10.0.0
 weaviate-client>=4.0.0
 redis>=5.0.0
-numpy>=1.24.0
+# Torch 2.2.x ARM64 wheels use NumPy's 1.x ABI. NumPy 2 imports but fails when
+# Torch converts inference tensors to arrays, so keep this contract explicit.
+numpy>=1.24.0,<2.0.0
 scikit-learn>=1.3.0
 
 # Recommendation intelligence eval harness (RI-1)

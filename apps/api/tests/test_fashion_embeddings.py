@@ -51,15 +51,8 @@ def test_module_has_no_top_level_torch_or_transformers_import():
     tree = ast.parse(module_path.read_text())
 
     top_level_imports = {
-        alias.name
-        for node in tree.body
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        node.module
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-    }
+        alias.name for node in tree.body if isinstance(node, ast.Import) for alias in node.names
+    } | {node.module for node in tree.body if isinstance(node, ast.ImportFrom)}
 
     assert "torch" not in top_level_imports
     assert "transformers" not in top_level_imports
@@ -161,10 +154,19 @@ class _FakeBatchInputs(dict):
         return self
 
 
-class _FakeProcessor:
+class _FakeImageProcessor:
     def __call__(self, images=None, text=None, return_tensors=None, padding=None):
         n = 1 if images is not None else len(text or [])
         return _FakeBatchInputs(_n=n)
+
+    @classmethod
+    def from_pretrained(cls, name):
+        return cls()
+
+
+class _FakeTokenizer:
+    def __call__(self, text, return_tensors=None, padding=None):
+        return _FakeBatchInputs(_n=len(text))
 
     @classmethod
     def from_pretrained(cls, name):
@@ -200,7 +202,8 @@ def _install_fake_torch_and_transformers(monkeypatch: pytest.MonkeyPatch) -> Non
 
     fake_transformers = types.ModuleType("transformers")
     fake_transformers.CLIPModel = _FakeModel
-    fake_transformers.CLIPProcessor = _FakeProcessor
+    fake_transformers.CLIPImageProcessor = _FakeImageProcessor
+    fake_transformers.CLIPTokenizerFast = _FakeTokenizer
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
 
 
