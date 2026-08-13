@@ -316,7 +316,7 @@ export function ProfileScreen() {
             </MonoLabel>
           </Pressable>
           <MonoLabel size={9} color={t.colors.t3} style={{ marginTop: 4 }}>
-            v 1.0 — ATTREQ
+            v 0.2.0-beta.1 — ATTREQ
           </MonoLabel>
         </View>
       </ScrollView>

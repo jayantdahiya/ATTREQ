@@ -81,6 +81,16 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def releaseSigningVariables = [
+    storeFile: System.getenv("ATTREQ_ANDROID_KEYSTORE_FILE"),
+    storePassword: System.getenv("ATTREQ_ANDROID_KEYSTORE_PASSWORD"),
+    keyAlias: System.getenv("ATTREQ_ANDROID_KEY_ALIAS"),
+    keyPassword: System.getenv("ATTREQ_ANDROID_KEY_PASSWORD"),
+]
+def hasReleaseSigning = releaseSigningVariables.values().every { value ->
+    value != null && !value.trim().isEmpty()
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -91,8 +101,8 @@ android {
         applicationId "com.attreq.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "0.2.0-beta.1"
     }
     signingConfigs {
         debug {
@@ -101,18 +111,69 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseSigningVariables.storeFile)
+                storePassword releaseSigningVariables.storePassword
+                keyAlias releaseSigningVariables.keyAlias
+                keyPassword releaseSigningVariables.keyPassword
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Never fall back to Android Debug. `verifyReleaseSigning` fails
+            // release tasks early when the external credentials are absent.
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+def releaseEnvFile = file("../../src/lib/utils/release-env.ts")
+
+tasks.register("verifyReleaseSigning") {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw new GradleException(
+                "Release signing is not configured. Export ATTREQ_ANDROID_KEYSTORE_FILE, " +
+                "ATTREQ_ANDROID_KEYSTORE_PASSWORD, ATTREQ_ANDROID_KEY_ALIAS, and " +
+                "ATTREQ_ANDROID_KEY_PASSWORD."
+            )
+        }
+        if (!file(releaseSigningVariables.storeFile).isFile()) {
+            throw new GradleException("ATTREQ Android release keystore does not exist.")
+        }
+    }
+}
+
+tasks.register("verifyReleaseApiUrl") {
+    doLast {
+        if (!releaseEnvFile.isFile()) {
+            throw new GradleException("Missing src/lib/utils/release-env.ts")
+        }
+        def matcher = releaseEnvFile.text =~ /releaseApiBaseUrl\s*=\s*['\"]([^'\"]+)['\"]/
+        if (!matcher.find()) {
+            throw new GradleException("releaseApiBaseUrl is missing from release-env.ts")
+        }
+        def releaseUrl = new URI(matcher.group(1))
+        def forbiddenHosts = ["localhost", "127.0.0.1", "10.0.2.2"]
+        if (releaseUrl.scheme != "https" || releaseUrl.host == null || forbiddenHosts.contains(releaseUrl.host)) {
+            throw new GradleException("Android release API URL must use HTTPS and a non-development hostname.")
+        }
+        if (releaseUrl.path != "/api/v1") {
+            throw new GradleException("Android release API URL must end with /api/v1")
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "preReleaseBuild") {
+        task.dependsOn("verifyReleaseSigning", "verifyReleaseApiUrl")
     }
 }
 

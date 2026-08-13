@@ -1,11 +1,13 @@
-// The ATTREQ dev backend runs on host port 8001 (8000 is a different service).
-// Two ways to reach it from the app:
-// - Public tunnel (works anywhere, no adb needed): a permanent named Cloudflare
-//   tunnel (`attreq-backend`, see ~/.cloudflared/config.yml) forwards
-//   dev-server-1.online -> localhost:8001, running as a launchd service so it
-//   survives restarts. The URL below is stable — no need to update it.
-// - Local dev: 'http://127.0.0.1:8001/api/v1' + `adb reverse tcp:8001 tcp:8001`
-//   (works on both emulator and USB/wireless devices).
-export const apiBaseUrl = 'https://dev-server-1.online/api/v1';
+import { releaseApiBaseUrl } from './release-env';
+
+// Development uses adb reverse to the local Docker backend. Release builds
+// use the stable Cloudflare hostname, which can move from the Mac to the Pi
+// without requiring testers to reinstall the APK.
+const developmentApiBaseUrl = 'http://127.0.0.1:8001/api/v1';
+const isDevelopmentBuild = typeof __DEV__ !== 'undefined' && __DEV__;
+
+export const apiBaseUrl = isDevelopmentBuild
+  ? developmentApiBaseUrl
+  : releaseApiBaseUrl;
 
 export const backendBaseUrl = apiBaseUrl.replace(/\/api\/v1\/?$/, '');
