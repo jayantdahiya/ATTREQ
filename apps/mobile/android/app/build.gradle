@@ -177,6 +177,38 @@ tasks.configureEach { task ->
     }
 }
 
+// Reanimated 4.2.1 imports Worklets from AGP's legacy
+// `intermediates/cmake/<variant>/obj` path. AGP 8.12 writes the native output
+// under `intermediates/cxx` instead, so a truly clean release build otherwise
+// fails even though Worklets compiled successfully. Mirror the four generated
+// libraries into the upstream path before Reanimated links; never reuse a
+// pre-existing binary from another checkout/build.
+def syncWorkletsForReanimatedRelease = tasks.register("syncWorkletsForReanimatedRelease") {
+    dependsOn(":react-native-worklets:externalNativeBuildRelease")
+    outputs.upToDateWhen { false }
+    doLast {
+        def workletsBuildDir = project(":react-native-worklets").layout.buildDirectory.get().asFile
+        ["armeabi-v7a", "arm64-v8a", "x86", "x86_64"].each { abi ->
+            def candidates = fileTree(new File(workletsBuildDir, "intermediates/cxx")) {
+                include "**/obj/${abi}/libworklets.so"
+            }.files.sort { left, right -> right.lastModified() <=> left.lastModified() }
+            if (candidates.isEmpty()) {
+                throw new GradleException("Worklets release library was not generated for ${abi}.")
+            }
+            copy {
+                from candidates.first()
+                into new File(workletsBuildDir, "intermediates/cmake/release/obj/${abi}")
+            }
+        }
+    }
+}
+
+project(":react-native-reanimated").tasks.configureEach { task ->
+    if (task.name.startsWith("buildCMakeRelWithDebInfo")) {
+        task.dependsOn(syncWorkletsForReanimatedRelease)
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
