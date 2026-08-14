@@ -56,8 +56,8 @@ The Pi is suitable for a small invite-only beta on the microSD only with the ded
 
 ### Domain and tunnel baseline
 
-- `https://dev-server-1.online/health` currently returns HTTP 200 through Cloudflare.
-- It currently routes to the **Mac development backend**, and the response reports `"environment":"development"`.
+- `https://dev-server-1.online/health` returns HTTP 200 through Cloudflare and now routes to the Raspberry Pi production backend.
+- Five consecutive post-cutover external probes reported `"environment":"production"`. The prior `attreq-backend` Mac tunnel remains connected as the one-command rollback target.
 - `apps/mobile/src/lib/utils/env.ts` hard-codes `https://dev-server-1.online/api/v1`.
 - The beta must either migrate `dev-server-1.online` to a named tunnel on the Pi or use a new hostname such as `api.<owned-domain>`.
 - Do not open or forward the backend port on the home router. Cloudflare Tunnel should make an outbound connection from the Pi and route directly to the backend service.
@@ -98,9 +98,9 @@ The ten work packages below are the known immediate beta-readiness scope. Finish
 | BR-02 | Make Android location UX honest | BR-01 | Complete; pushed on `main` |
 | BR-03 | Add protection for public, costly endpoints | — | Application limiter complete; edge rule remains part of BR-06 |
 | BR-04 | Benchmark optional AI/vector components on the Pi and record the decision | — | Local components measured; remote reranker remains deliberately disabled for beta |
-| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Private microSD stack healthy in production mode; reboot gate remains |
-| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Dedicated `attreq-pi-beta` tunnel has four healthy connections; DNS cutover waits for backup/restore and reboot gates |
-| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | Live Pi R2 and Groq probes pass; database backup/restore, scheduling, and monitoring remain |
+| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Complete; stack and tunnel recovered automatically after reboot |
+| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Hostname is live on `attreq-pi-beta`; external production health and public API lifecycle pass; physical mobile-data gate remains |
+| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | R2 lifecycle, backup, isolated restore, retention, and six-hour timer pass; Sentry/external alerting remain |
 | BR-08 | Configure durable Android signing, versioning, and API URL selection | BR-06 | Complete; release URL stays stable across the pending hostname cutover |
 | BR-09 | Publish the beta APK through GitHub Releases | BR-08 | Complete; public prerelease `v0.2.0-beta.1` published |
 | BR-10 | Run the remote-device beta gate and close the milestone | BR-06, BR-07, BR-09 | Not started |
@@ -113,19 +113,20 @@ The code wave is pushed; the release is published; the live Pi/R2/tunnel wave is
 - **BR-02:** registration no longer advertises a device-location action that deterministically fails. Manual city entry is the supported beta path and its registration payload is tested.
 - **BR-03:** a reusable Redis/Lua fixed-window limiter now protects shared auth, wardrobe-image, Style-DNA-build, and explicit recommendation-refresh budgets. Batch uploads charge by image count. It emits a stable `429` with `Retry-After`, hashes subjects in Redis keys, logs and fails open when Redis is unavailable, and trusts `CF-Connecting-IP`/`X-Forwarded-For` only when proxy trust is explicitly enabled and the immediate peer matches an allowlisted CIDR.
 - **BR-04:** the reproducible harness, synthetic reranker cases, loopback-only benchmark Compose profiles, and [BR-04 runbook](02-br04-pi-benchmark-runbook.md) were exercised on the Pi. Native ARM64 FashionCLIP and manual-vector Weaviate passed; `text2vec-transformers` failed the sustained CPU gate. The run found and fixed the ARM64 NumPy/Torch ABI constraint, separate CLIP modality processing, and shallow-container harness parsing. Reranker measurement is paused until the Groq credential is rotated and retested.
-- **BR-05:** the common [Pi stack runbook](03-br05-pi-stack-runbook.md) now has a required [microSD deployment overlay and runbook](04-microsd-deployment-runbook.md). The private stack completed all migrations and reports production health with no published host ports. PostgreSQL binds `/var/lib/attreq/postgres`; Redis and `/app/uploads` are tmpfs with Redis AOF/RDB disabled; startup refuses unsafe disk/inode levels. FashionCLIP/Weaviate, text2vec, and reranking remain off for the initial stability soak.
-- **BR-06/BR-07:** the dedicated `attreq-pi-beta` named tunnel has four healthy QUIC connections without changing live DNS. A live Pi create/read/delete R2 probe passed and removed its object. The reused configured Groq credential passed a real classification probe. Rate-limit proxy trust is restricted to the actual `172.19.0.0/16` Compose bridge. The Pi's external mode-`0600` environment file contains generated production database/JWT values and configured R2/provider values without exposing them in Git or chat.
+- **BR-05:** the common [Pi stack runbook](03-br05-pi-stack-runbook.md) now has a required [microSD deployment overlay and runbook](04-microsd-deployment-runbook.md). The stack completed all migrations, recovered automatically after a host reboot, and reports production health with no published host ports. PostgreSQL binds `/var/lib/attreq/postgres`; Redis and `/app/uploads` are tmpfs with Redis AOF/RDB disabled; startup refuses unsafe disk/inode levels. FashionCLIP/Weaviate, text2vec, and reranking remain off for the initial stability soak.
+- **BR-06/BR-07:** `dev-server-1.online` is live on the dedicated `attreq-pi-beta` tunnel with four healthy QUIC connections. A disposable public account passed registration, login, R2 upload, Groq classification, three presigned-image reads, API deletion, and zero-object cleanup. The test account was removed. A PostgreSQL dump passed R2 SHA/size round-trip verification and an isolated nine-table restore; the systemd timer then completed post-reboot and post-cutover backups with scoped retention. Rate-limit proxy trust is restricted to the actual `172.19.0.0/16` Compose bridge. The Pi's external mode-`0600` environment file contains generated production database/JWT values and configured R2/provider values without exposing them in Git or chat.
+- **Cutover fixes:** the live lifecycle gate found and fixed two R2 contract gaps before final acceptance: single-item wardrobe responses now presign stored object keys, and item deletion now attempts every primary/additional-photo storage reference. The route was returned to the Mac during each fix, both changes received regression tests, and the disposable orphan objects were removed.
 - **BR-08/BR-09:** version code `2` / version `0.2.0-beta.1`, permanent external signing, release/development API separation, clean-build native compatibility, signer verification, checksum generation, tag, and GitHub prerelease are complete. The APK SHA-256 is `7920a34f1d2102bf83ec82c7119e466fc3268dcd780062764e1b5b51616ca487`.
 
 Integrated local verification before repository commit:
 
-- backend: 409 tests passed;
+- backend: 412 tests passed;
 - backend Ruff: passed;
 - mobile TypeScript: passed;
 - mobile Jest: 12 suites / 61 tests passed;
 - BR-04/BR-05: Python compilation, three-case reranker dry-run, two architecture-pin tests, both Docker Compose configurations (all optional profiles), shell syntax, pinned `cloudflared` registry/ARM64 manifest, and diff whitespace checks passed.
 
-BR-01, BR-02, BR-08, and BR-09 are complete and pushed. BR-03's application layer is complete. BR-04 through BR-07 and the physical-device BR-10 acceptance gate remain open.
+BR-01, BR-02, BR-05, BR-08, and BR-09 are complete and pushed. BR-03's application layer is complete. BR-04 retains conservative disabled decisions for the unapproved optional services. BR-06 is live but awaits the physical mobile-data gate; BR-07 awaits Sentry/external alerting; BR-10 remains user acceptance.
 
 ## BR-01 — Finish and Test the Reliability Patch
 

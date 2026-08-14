@@ -352,17 +352,17 @@ Rollback sequence:
 
 ## Completion checklist
 
-- [ ] Merged Compose config passes and publishes no host ports.
-- [ ] Startup storage guard passes at the documented thresholds.
-- [ ] Redis AOF and snapshots are disabled; Redis `/data` is tmpfs.
-- [ ] Backend upload scratch is tmpfs and `STORAGE_BACKEND=s3`.
-- [ ] Full R2 image lifecycle passes across a backend restart.
-- [ ] First PostgreSQL backup is uploaded and SHA/size verified.
-- [ ] Retention dry-run touches only recognized objects under the dedicated prefix.
-- [ ] Download and isolated restore drill pass without modifying the live database.
-- [ ] Six-hour backup schedule and log rotation are active.
+- [x] Merged Compose config passes and publishes no host ports.
+- [x] Startup storage guard passes at the documented thresholds.
+- [x] Redis AOF and snapshots are disabled; Redis `/data` is tmpfs.
+- [x] Backend upload scratch is tmpfs and `STORAGE_BACKEND=s3`.
+- [x] Full R2 image lifecycle passes across a backend restart.
+- [x] First PostgreSQL backup is uploaded and SHA/size verified.
+- [x] Retention dry-run touches only recognized objects under the dedicated prefix.
+- [x] Download and isolated restore drill pass without modifying the live database.
+- [x] Six-hour backup schedule and bounded journal logging are active.
 - [ ] External HTTPS monitoring and Sentry are active.
 - [ ] Signed APK passes the end-to-end flow over mobile data.
-- [ ] Mac route is retained for the 48-hour soak.
+- [x] Mac route is retained for the 48-hour soak.
 
 The microSD deployment milestone is not complete until this runbook's repository changes are committed and pushed under the project milestone policy and the live backup/restore and physical-phone gates pass.
