@@ -188,6 +188,10 @@ class WardrobeItemResponse(WardrobeItemBase):
     needs_review: bool = False
     review_reason: str | None = None
 
+    @field_serializer("original_image_url", "processed_image_url", "thumbnail_url")
+    def _resolve_image_urls(self, value: str | None) -> str | None:
+        return resolve_image_url(value)
+
     class Config:
         from_attributes = True
 
