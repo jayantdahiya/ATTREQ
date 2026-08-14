@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the ATTREQ R2 database backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:17:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=attreq-db-backup.service
+
+[Install]
+WantedBy=timers.target

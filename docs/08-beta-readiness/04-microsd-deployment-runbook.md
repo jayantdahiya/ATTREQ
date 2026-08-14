@@ -244,13 +244,28 @@ Use `backup --keep-local` only for a deliberate restore drill; routine backups s
 
 ### Six-hour schedule
 
-Run the verified command every six hours using the Pi's existing root scheduler. Example root cron entry:
+Install the tracked systemd service and timer, then verify the resolved calendar:
 
-```cron
-17 */6 * * * cd /opt/attreq && ATTREQ_DATA_DIR=/var/lib/attreq ATTREQ_ENV_FILE=/etc/attreq/pi-beta.env /usr/bin/python3 scripts/dev/pi-microsd-backup.py backup >>/var/log/attreq-db-backup.log 2>&1
+```bash
+sudo install -m 0644 infra/systemd/attreq-db-backup.service \
+  /etc/systemd/system/attreq-db-backup.service
+sudo install -m 0644 infra/systemd/attreq-db-backup.timer \
+  /etc/systemd/system/attreq-db-backup.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now attreq-db-backup.timer
+systemctl list-timers attreq-db-backup.timer --all
+systemd-analyze calendar '*-*-* 00/6:17:00 UTC'
 ```
 
-Use a non-zero minute to avoid boot-time job bursts. Configure normal host log rotation for `/var/log/attreq-db-backup.log`. Treat a missing verified backup for more than six hours as a deployment rollback trigger.
+The timer runs at minute 17 every six UTC hours, catches a missed invocation
+after reboot, and writes to the bounded system journal. Inspect each run with:
+
+```bash
+systemctl status attreq-db-backup.service --no-pager
+journalctl -u attreq-db-backup.service --since '24 hours ago' --no-pager
+```
+
+Treat a failed unit or missing verified backup for more than six hours as a deployment rollback trigger.
 
 ## 8. Perform the mandatory isolated restore drill
 
