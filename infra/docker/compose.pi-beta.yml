@@ -136,6 +136,9 @@ services:
     image: cloudflare/cloudflared:2026.8.1
     restart: unless-stopped
     environment:
+      # cloudflared reads this environment variable directly. Do not append a
+      # shell-style "$TUNNEL_TOKEN" argument: the distroless image does not
+      # perform shell expansion and would receive that text literally.
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in ATTREQ_ENV_FILE}
     command:
       [
@@ -144,8 +147,6 @@ services:
         "--url",
         "http://backend:8000",
         "run",
-        "--token",
-        "$$TUNNEL_TOKEN",
       ]
     networks: [internal]
     depends_on:

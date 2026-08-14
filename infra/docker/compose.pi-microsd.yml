@@ -1,0 +1,85 @@
+# Raspberry Pi microSD overlay for the ATTREQ beta stack.
+#
+# Always combine this with compose.pi-beta.yml. Persistent PostgreSQL data is
+# kept below ATTREQ_DATA_DIR, while cache data and local upload scratch space
+# use tmpfs to avoid unnecessary microSD writes. User images remain in the
+# configured private R2 bucket.
+
+x-microsd-environment: &microsd-environment
+  STORAGE_BACKEND: s3
+
+services:
+  storage-guard:
+    image: alpine:3.22.1
+    restart: "no"
+    environment:
+      ATTREQ_MICROSD_MAX_USED_PERCENT: ${ATTREQ_MICROSD_MAX_USED_PERCENT:-75}
+      ATTREQ_MICROSD_MIN_FREE_MIB: ${ATTREQ_MICROSD_MIN_FREE_MIB:-8192}
+      ATTREQ_MICROSD_MIN_FREE_INODES: ${ATTREQ_MICROSD_MIN_FREE_INODES:-100000}
+    volumes:
+      - type: bind
+        source: ${ATTREQ_DATA_DIR:?Export ATTREQ_DATA_DIR=/var/lib/attreq}
+        target: /attreq-data
+        read_only: true
+        bind:
+          create_host_path: false
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -- $$(df -Pk /attreq-data | awk 'NR == 2 {gsub(/%/, "", $$5); print $$4, $$5}')
+        free_kib="$$1"
+        used_percent="$$2"
+        set -- $$(df -Pi /attreq-data | awk 'NR == 2 {print $$4}')
+        free_inodes="$$1"
+        min_free_kib=$$((ATTREQ_MICROSD_MIN_FREE_MIB * 1024))
+        test "$$used_percent" -le "$$ATTREQ_MICROSD_MAX_USED_PERCENT" || {
+          echo "storage guard failed: microSD usage is $${used_percent}% (maximum $${ATTREQ_MICROSD_MAX_USED_PERCENT}%)" >&2
+          exit 1
+        }
+        test "$$free_kib" -ge "$$min_free_kib" || {
+          echo "storage guard failed: free space is below $${ATTREQ_MICROSD_MIN_FREE_MIB} MiB" >&2
+          exit 1
+        }
+        test "$$free_inodes" -ge "$$ATTREQ_MICROSD_MIN_FREE_INODES" || {
+          echo "storage guard failed: fewer than $${ATTREQ_MICROSD_MIN_FREE_INODES} inodes remain" >&2
+          exit 1
+        }
+        echo "storage guard passed: $${used_percent}% used, $$((free_kib / 1024)) MiB free, $${free_inodes} inodes free"
+
+  postgres:
+    depends_on:
+      storage-guard:
+        condition: service_completed_successfully
+
+  redis:
+    # Redis is cache/rate-limit state in this beta. Losing it on restart is an
+    # accepted trade-off; both AOF and RDB snapshots are deliberately disabled.
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    volumes:
+      - type: tmpfs
+        target: /data
+        tmpfs:
+          size: 67108864
+          mode: 0700
+
+  migrations:
+    environment:
+      <<: *microsd-environment
+
+  backend:
+    environment:
+      <<: *microsd-environment
+    volumes:
+      # The S3 backend does not persist user images here. Keep any accidental
+      # local scratch write in RAM and expose only backup staging read-only.
+      - type: tmpfs
+        target: /app/uploads
+        tmpfs:
+          size: 268435456
+          mode: 0700
+      - type: bind
+        source: ${ATTREQ_DATA_DIR:?Export ATTREQ_DATA_DIR=/var/lib/attreq}/backups
+        target: /var/lib/attreq-backups
+        read_only: true
+        bind:
+          create_host_path: false

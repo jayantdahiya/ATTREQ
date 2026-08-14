@@ -11,7 +11,7 @@ This phase is complete when a tester can install a release-signed APK from GitHu
 
 `register → onboarding → upload photos → AI classification → daily recommendation → feedback/wear → history`
 
-The APK must call the Raspberry Pi backend through HTTPS, not the development backend on the Mac. The backend must survive restarts, keep its database on the Pi's SSD, keep user images in durable object storage, and have a tested backup/restore path.
+The APK must call the Raspberry Pi backend through HTTPS, not the development backend on the Mac. The backend must survive restarts, keep its beta database on the Pi's microSD with strict write/space controls, keep user images and verified database backups in durable R2 object storage, and have a tested isolated restore path. Reliable SSD/NVMe storage remains required before the beta expands.
 
 ## Current Verified Truth
 
@@ -47,12 +47,12 @@ There are also unrelated untracked paths. Do not stage them with a blanket `git 
 - Host alias: `raspberry-pi`
 - Hardware: Raspberry Pi 5 Model B, ARM64, 4 cores, 8 GB RAM
 - OS: Ubuntu, ARM64
-- System disk: approximately 59 GB microSD
-- Data disk: approximately 233 GB ext4 mounted at `/mnt/storage`
+- System disk: approximately 59 GB microSD, with approximately 39 GB free at deployment
+- The approximately 233 GB USB HDD previously used at `/mnt/storage` developed USB resets and EXT4 journal I/O errors, disconnected, and is not part of the deployment.
 - Network: wired Ethernet
-- Docker Engine 29.7.2 and Docker Compose 5.4.0 are installed from Docker's official Ubuntu repository. The repository is cloned at `/opt/attreq`; optional-component benchmarking is in progress before the production stack starts.
+- Docker Engine 29.7.2 and Docker Compose 5.4.0 are installed from Docker's official Ubuntu repository. The repository is cloned at `/opt/attreq`; the private minimal production stack is running and awaiting its backup/restore and reboot gates before DNS cutover.
 
-The Pi is suitable for a small invite-only beta. Put PostgreSQL data and backups on `/mnt/storage`, not the microSD card.
+The Pi is suitable for a small invite-only beta on the microSD only with the dedicated overlay and small tester count. PostgreSQL lives under `/var/lib/attreq/postgres`; Redis and upload scratch are tmpfs; user images and verified database backups live in private R2. Do not use `/mnt/storage` or expand the beta until reliable SSD/NVMe storage is available.
 
 ### Domain and tunnel baseline
 
@@ -69,7 +69,7 @@ flowchart LR
     A["Android beta APK"] -->|"HTTPS api.<domain>"| C["Cloudflare edge"]
     C -->|"Named outbound tunnel"| T["cloudflared on Raspberry Pi"]
     T --> B["FastAPI backend"]
-    B --> P["PostgreSQL on /mnt/storage"]
+    B --> P["PostgreSQL on /var/lib/attreq (microSD)"]
     B --> R["Redis"]
     B --> O["Cloudflare R2 private bucket"]
     B --> G["Groq classifier / optional reranker"]
@@ -82,7 +82,7 @@ flowchart LR
 
 Do not invent these values or place credentials in documentation:
 
-The user resolved the original decisions on 2026-08-14: retain and migrate `dev-server-1.online`, use private Cloudflare R2, publish the Android beta in the public repository, and authorize the Pi installation under `/mnt/storage/attreq`. The permanent Android key is backed up outside the repository.
+The user resolved the original decisions on 2026-08-14: retain and migrate `dev-server-1.online`, use private Cloudflare R2, publish the Android beta in the public repository, and proceed with a guarded microSD deployment after the USB HDD proved unreliable. The permanent Android key is backed up outside the repository.
 
 Remaining user-only acceptance is a physical Android smoke test over mobile data after the Pi cutover. No infrastructure secret needs to be pasted into chat.
 
@@ -97,10 +97,10 @@ The ten work packages below are the known immediate beta-readiness scope. Finish
 | BR-01 | Finish and test the reliability patch | — | Complete; pushed on `main` |
 | BR-02 | Make Android location UX honest | BR-01 | Complete; pushed on `main` |
 | BR-03 | Add protection for public, costly endpoints | — | Application limiter complete; edge rule remains part of BR-06 |
-| BR-04 | Benchmark optional AI/vector components on the Pi and record the decision | — | Three local components measured; reranker awaits credential rotation/retest |
-| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Docker/repository ready; stack waits for Groq key rotation and final flags |
-| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Dedicated `attreq-pi-beta` tunnel created; DNS cutover waits for Pi health |
-| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | Existing private R2 create/read/delete probe passed; live storage/backup/monitoring checks remain |
+| BR-04 | Benchmark optional AI/vector components on the Pi and record the decision | — | Local components measured; remote reranker remains deliberately disabled for beta |
+| BR-05 | Build the Pi-specific production stack | BR-03, BR-04 | Private microSD stack healthy in production mode; reboot gate remains |
+| BR-06 | Move the Cloudflare hostname/tunnel to the Pi | BR-05 | Dedicated `attreq-pi-beta` tunnel has four healthy connections; DNS cutover waits for backup/restore and reboot gates |
+| BR-07 | Wire R2, persistence, backup, restore, and monitoring | BR-05 | Live Pi R2 and Groq probes pass; database backup/restore, scheduling, and monitoring remain |
 | BR-08 | Configure durable Android signing, versioning, and API URL selection | BR-06 | Complete; release URL stays stable across the pending hostname cutover |
 | BR-09 | Publish the beta APK through GitHub Releases | BR-08 | Complete; public prerelease `v0.2.0-beta.1` published |
 | BR-10 | Run the remote-device beta gate and close the milestone | BR-06, BR-07, BR-09 | Not started |
@@ -113,8 +113,8 @@ The code wave is pushed; the release is published; the live Pi/R2/tunnel wave is
 - **BR-02:** registration no longer advertises a device-location action that deterministically fails. Manual city entry is the supported beta path and its registration payload is tested.
 - **BR-03:** a reusable Redis/Lua fixed-window limiter now protects shared auth, wardrobe-image, Style-DNA-build, and explicit recommendation-refresh budgets. Batch uploads charge by image count. It emits a stable `429` with `Retry-After`, hashes subjects in Redis keys, logs and fails open when Redis is unavailable, and trusts `CF-Connecting-IP`/`X-Forwarded-For` only when proxy trust is explicitly enabled and the immediate peer matches an allowlisted CIDR.
 - **BR-04:** the reproducible harness, synthetic reranker cases, loopback-only benchmark Compose profiles, and [BR-04 runbook](02-br04-pi-benchmark-runbook.md) were exercised on the Pi. Native ARM64 FashionCLIP and manual-vector Weaviate passed; `text2vec-transformers` failed the sustained CPU gate. The run found and fixed the ARM64 NumPy/Torch ABI constraint, separate CLIP modality processing, and shallow-container harness parsing. Reranker measurement is paused until the Groq credential is rotated and retested.
-- **BR-05:** the [Pi stack runbook](03-br05-pi-stack-runbook.md), production Compose, names-only env template, and safe operator script are ready. The minimal stack has PostgreSQL 15, Redis 7, one-shot migrations, FastAPI, and a pinned ARM64-capable `cloudflared`; it publishes no host ports and stores persistent bind data under `/mnt/storage/attreq`. Weaviate and `text2vec-transformers` remain independent profiles, while FashionCLIP and reranking remain independent flags. Docker/Compose are installed, `/opt/attreq` is at a reviewed commit, and production secrets are staged outside Git; the stack remains stopped until BR-04 finishes.
-- **BR-06/BR-07:** the dedicated `attreq-pi-beta` named tunnel exists without changing live DNS. The existing private R2 bucket and scoped credentials passed a non-user-data create/read/delete probe; the probe object was deleted. The Pi's external mode-`0600` environment file contains generated production database/JWT values and the configured R2/provider values without exposing them in Git or chat.
+- **BR-05:** the common [Pi stack runbook](03-br05-pi-stack-runbook.md) now has a required [microSD deployment overlay and runbook](04-microsd-deployment-runbook.md). The private stack completed all migrations and reports production health with no published host ports. PostgreSQL binds `/var/lib/attreq/postgres`; Redis and `/app/uploads` are tmpfs with Redis AOF/RDB disabled; startup refuses unsafe disk/inode levels. FashionCLIP/Weaviate, text2vec, and reranking remain off for the initial stability soak.
+- **BR-06/BR-07:** the dedicated `attreq-pi-beta` named tunnel has four healthy QUIC connections without changing live DNS. A live Pi create/read/delete R2 probe passed and removed its object. The reused configured Groq credential passed a real classification probe. Rate-limit proxy trust is restricted to the actual `172.19.0.0/16` Compose bridge. The Pi's external mode-`0600` environment file contains generated production database/JWT values and configured R2/provider values without exposing them in Git or chat.
 - **BR-08/BR-09:** version code `2` / version `0.2.0-beta.1`, permanent external signing, release/development API separation, clean-build native compatibility, signer verification, checksum generation, tag, and GitHub prerelease are complete. The APK SHA-256 is `7920a34f1d2102bf83ec82c7119e466fc3268dcd780062764e1b5b51616ca487`.
 
 Integrated local verification before repository commit:
@@ -269,7 +269,7 @@ The components are distinct and must be evaluated separately:
 | `text2vec-transformers` | Yes | 11.519 s cold / 6.600 s warm | 360.8 MiB observed; 384-d vectors; warm p95 50.8 ms, but confirmation load sustained 92.0% host CPU mean; 61.7°C peak | **Fail the <85% CPU gate; keep the `text2vec` profile disabled for beta** |
 | Groq reranker | Remote | Pending | Provider test stopped before a valid result; rotate the credential and repeat the synthetic ranking/latency gate | **Keep disabled until a clean retest passes** |
 
-The isolated tests did not deploy the production API, so the selected final topology still requires the BR-05 health/recommendation impact and reboot gates. Raw non-secret JSON remains on the Pi under `/mnt/storage/attreq/benchmarks/results/` and is intentionally excluded from Git. Temporary reranker environment and diagnostic files were securely removed after a credential prefix reached a validation traceback; that provider key must be revoked before deployment.
+The selected production API now passes its private health gate; the reboot and public end-to-end gates remain. The old raw benchmark directory was on the failed/unmounted HDD and is not a deployment dependency; the durable decisions are recorded here. Temporary reranker environment and diagnostic files were securely removed, and reranking remains disabled for beta.
 
 ### Exit criteria
 
@@ -282,7 +282,7 @@ The isolated tests did not deploy the production API, so the selected final topo
 ### Scope
 
 1. Install Docker Engine and the Compose plugin on the Pi using current official instructions.
-2. Create `/mnt/storage/attreq` with explicit subdirectories for PostgreSQL, backups, and any selected local service data.
+2. Create `/var/lib/attreq` with explicit PostgreSQL and backup-staging directories, and apply the mandatory microSD overlay. Do not use the failed HDD path.
 3. Add a Pi production Compose file under `infra/docker/` rather than deploying the stale `compose.api.prod.yml` unchanged.
 4. Include:
    - PostgreSQL 15;
@@ -312,7 +312,7 @@ The isolated tests did not deploy the production API, so the selected final topo
 
 - A reboot returns every required service to healthy without manual commands.
 - No backend dependency is publicly listening on the router or Pi host.
-- Persistent state resolves under `/mnt/storage/attreq` or R2 as designed.
+- PostgreSQL resolves under `/var/lib/attreq/postgres`; Redis/upload scratch resolve to tmpfs; images and verified backup copies resolve to private R2.
 
 ## BR-06 — Move the Cloudflare Hostname to the Pi
 
@@ -357,8 +357,8 @@ The S3-compatible R2 storage implementation already exists under `apps/api/src/a
 
 ### Database and service backups
 
-1. Schedule PostgreSQL backups to `/mnt/storage/attreq/backups`.
-2. Copy backups off the Pi on a defined schedule; the SSD is not an off-site backup.
+1. Stage compressed PostgreSQL backups atomically under `/var/lib/attreq/backups`.
+2. Upload every completed dump to the dedicated private R2 prefix, verify its complete SHA-256 and size, then remove routine local staging.
 3. If Weaviate is enabled, back up its selected collection(s) and document restore.
 4. Define retention and test an actual restore into an isolated database.
 
@@ -366,7 +366,7 @@ The S3-compatible R2 storage implementation already exists under `apps/api/src/a
 
 - external HTTPS monitor for `/health`;
 - Sentry backend DSN and deliberate test event;
-- disk-space alert for `/mnt/storage` and `/`;
+- disk-space/inode alerts for `/`, with rollback gates at 75% used, below 8 GiB free, or below 100,000 free inodes;
 - container restart/unhealthy visibility;
 - documented response for power/network outage.
 
