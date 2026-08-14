@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 
@@ -356,7 +357,19 @@ async def test_batch_worker_no_embedding_when_disabled(monkeypatch):
 @pytest.mark.asyncio
 async def test_delete_wardrobe_item_calls_delete_vector(monkeypatch, client):
     user = build_user()
-    item = build_wardrobe_item(user_id=user.id)
+    item = build_wardrobe_item(
+        user_id=user.id,
+        original_image_url="originals/item.jpg",
+        processed_image_url="processed/item.png",
+        thumbnail_url="thumbnails/item.png",
+    )
+    item.__dict__["photos"] = [
+        SimpleNamespace(
+            original_image_url="originals/additional.jpg",
+            processed_image_url="processed/additional.png",
+            thumbnail_url="thumbnails/additional.png",
+        )
+    ]
 
     async def override_get_db():
         yield None
@@ -375,6 +388,12 @@ async def test_delete_wardrobe_item_calls_delete_vector(monkeypatch, client):
 
     delete_item_calls: list[uuid.UUID] = []
     delete_vector_calls: list[uuid.UUID] = []
+    deleted_storage_refs: list[str] = []
+
+    class FakeStorage:
+        async def delete_file(self, ref):
+            deleted_storage_refs.append(ref)
+            return True
 
     monkeypatch.setattr(wardrobe.wardrobe_crud, "get_by_id", fake_get_by_id)
     monkeypatch.setattr(wardrobe.wardrobe_crud, "delete", fake_delete)
@@ -389,6 +408,7 @@ async def test_delete_wardrobe_item_calls_delete_vector(monkeypatch, client):
     )
     monkeypatch.setattr(wardrobe, "invalidate_wardrobe_stats_cache", fake_invalidate_stats)
     monkeypatch.setattr(wardrobe, "invalidate_daily_suggestions", fake_invalidate_daily)
+    monkeypatch.setattr(wardrobe, "get_storage", lambda: FakeStorage())
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[deps.get_current_active_user] = lambda: user
@@ -398,5 +418,13 @@ async def test_delete_wardrobe_item_calls_delete_vector(monkeypatch, client):
     assert response.status_code == 204
     assert delete_item_calls == [item.id]
     assert delete_vector_calls == [item.id]
+    assert set(deleted_storage_refs) == {
+        "originals/item.jpg",
+        "processed/item.png",
+        "thumbnails/item.png",
+        "originals/additional.jpg",
+        "processed/additional.png",
+        "thumbnails/additional.png",
+    }
 
     app.dependency_overrides.clear()

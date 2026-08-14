@@ -512,6 +512,25 @@ async def delete_wardrobe_item(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wardrobe item not found")
 
+    # Capture raw storage references before the database delete. R2 stores
+    # object keys in these columns (never presigned URLs), and get_by_id
+    # eager-loads any additional photos so the whole item can be cleaned up.
+    storage_refs = {
+        ref
+        for ref in (item.original_image_url, item.processed_image_url, item.thumbnail_url)
+        if ref
+    }
+    for photo in item.photos:
+        storage_refs.update(
+            ref
+            for ref in (
+                photo.original_image_url,
+                photo.processed_image_url,
+                photo.thumbnail_url,
+            )
+            if ref
+        )
+
     # Delete from database
     deleted = await wardrobe_crud.delete(db, item_id, current_user.id)
 
@@ -548,9 +567,18 @@ async def delete_wardrobe_item(
     except Exception as e:
         logger.warning(f"Failed to invalidate daily-suggestions cache: {str(e)}")
 
-    # Delete files (best effort, don't fail if files don't exist)
-    # Note: File paths would need to be reconstructed from URLs or stored separately
-    # For now, log the operation
+    # Delete files after the database transaction succeeds. Storage cleanup is
+    # best effort so an already-missing object cannot turn a successful item
+    # deletion into a client-visible 500, but every stored reference is tried.
+    storage = get_storage()
+    for ref in storage_refs:
+        try:
+            removed = await storage.delete_file(ref)
+            if not removed:
+                logger.warning("Storage object was already absent during item deletion")
+        except Exception as e:
+            logger.warning("Failed to delete wardrobe item storage object: %s", type(e).__name__)
+
     logger.info(f"Wardrobe item {item_id} deleted by user {current_user.id}")
 
     return
